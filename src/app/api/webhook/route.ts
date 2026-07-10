@@ -70,7 +70,7 @@ export async function POST(request: Request) {
           statusInterno = "cancelado";
         }
 
-        let numeroIngresso = ticketSnap.data().numeroIngresso || null;
+        let numeroIngresso = ticketSnap.data()?.numeroIngresso || null;
 
         if (statusInterno === "aprovado" && !numeroIngresso) {
           // Busca o maior número de ingresso já atribuído
