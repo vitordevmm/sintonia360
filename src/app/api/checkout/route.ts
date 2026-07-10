@@ -83,9 +83,11 @@ export async function POST(request: Request) {
     // Gera um identificador de compra único
     const purchaseId = `ticket_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-    // Define a base URL para redirecionamento pós-pagamento
+    // Define a base URL para redirecionamento pós-pagamento de forma robusta
+    const host = request.headers.get("host");
+    const protocol = host?.includes("localhost") ? "http" : "https";
     const origin = request.headers.get("origin");
-    const baseUrl = origin || process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+    const baseUrl = origin || (host ? `${protocol}://${host}` : (process.env.NEXT_PUBLIC_BASE_URL || "https://sintonia360.vercel.app"));
     const infinitePayHandle = process.env.INFINITEPAY_HANDLE || "sintonia360";
 
     // 1. Cria a preferência de pagamento na InfinitePay
