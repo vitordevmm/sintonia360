@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #F5F500;
+  --color-primary-hover: #D8D800;
+  --color-bg-black: #000000;
+  --color-bg-dark: #0a0a0a;
+  --color-card-dark: #121212;
+  --color-border-dark: #222222;
+  
+  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-montserrat), sans-serif;
+}
+
+:root {
+  --background: #000000;
+  --foreground: #ffffff;
+}
+
+body {
+  background-color: #000000;
+  color: #ffffff;
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+/* Custom premium solid scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #000000;
+}
+::-webkit-scrollbar-thumb {
+  background: #222222;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #F5F500;
+}
+
+/* Clean, flat cards with solid borders (Mais clássico e bem-acabado) */
+.flat-card {
+  background: #0d0d0d;
+  border: 1px solid #222222;
+}
+
+.flat-card-hover {
+  transition: all 0.2s ease-in-out;
+}
+
+.flat-card-hover:hover {
+  border-color: #F5F500;
+}
+
+/* Premium input text styling - solid and high contrast */
+.premium-input {
+  background: #121212;
+  border: 1px solid #222222;
+  border-radius: 4px;
+  color: white;
+  transition: all 0.15s ease-in-out;
+}
+
+.premium-input:focus {
+  outline: none;
+  border-color: #F5F500;
+  background: #161616;
+}
+
+@media print {
+  [data-sonner-toaster] {
+    display: none !important;
+  }
+}
