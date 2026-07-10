@@ -47,9 +47,9 @@ export async function POST(request: Request) {
     // Log the payload to Firestore for debugging
     await adminDb.collection("webhook_logs").add({
       receivedAt: new Date(),
-      body: body,
-      ticketId,
-      paymentStatus,
+      body: body || {},
+      ticketId: ticketId || "nao_encontrado",
+      paymentStatus: paymentStatus || "nao_encontrado",
     });
 
     if (ticketId) {

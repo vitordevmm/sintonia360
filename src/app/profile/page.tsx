@@ -94,6 +94,28 @@ export default function ProfilePage() {
   };
 
   useEffect(() => {
+    // Sincronização via URL de redirecionamento (Fallback se webhook atrasar/falhar)
+    const checkSync = async () => {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const orderNsu = urlParams.get("order_nsu");
+        const transactionNsu = urlParams.get("transaction_nsu");
+        
+        if (orderNsu) {
+          await fetch("/api/checkout/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ order_nsu: orderNsu, transaction_nsu: transactionNsu })
+          });
+          // Remove os parâmetros da URL sem recarregar a página para evitar loop
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      } catch (err) {
+        console.error("Erro na sincronização de fallback:", err);
+      }
+    };
+    checkSync();
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
         router.push("/login?redirect=/profile");
