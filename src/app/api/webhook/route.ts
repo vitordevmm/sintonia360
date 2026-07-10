@@ -44,6 +44,14 @@ export async function POST(request: Request) {
     const paymentStatus = (dataObj.status || dataObj.transaction?.status || body.status)?.toLowerCase();
     const paymentId = dataObj.id || dataObj.transaction?.id || dataObj.payment_id || body.id;
 
+    // Log the payload to Firestore for debugging
+    await adminDb.collection("webhook_logs").add({
+      receivedAt: new Date(),
+      body: body,
+      ticketId,
+      paymentStatus,
+    });
+
     if (ticketId) {
       const docRef = adminDb.collection("ingressos").doc(ticketId);
       const ticketSnap = await docRef.get();
