@@ -14,11 +14,32 @@ interface TicketData {
   status: "pendente" | "aprovado" | "cancelado";
   qrCodeData: string;
   parkingQrCodeData?: string;
-  createdAt?: unknown;
+  numeroIngresso?: number;
+  createdAt?: any;
 }
 
 export default function TicketCard({ ticket, type = "ingresso" }: { ticket: TicketData, type?: "ingresso" | "parking" }) {
   const [isDownloading, setIsDownloading] = useState(false);
+
+  // Verifica se expirou (24h)
+  const isExpired = () => {
+    if (ticket.status !== "pendente" || !ticket.createdAt) return false;
+    
+    let createdTime: number;
+    if (ticket.createdAt.toMillis) {
+      createdTime = ticket.createdAt.toMillis();
+    } else if (ticket.createdAt.seconds) {
+      createdTime = ticket.createdAt.seconds * 1000;
+    } else {
+      createdTime = new Date(ticket.createdAt).getTime();
+    }
+
+    const now = Date.now();
+    const hours24 = 24 * 60 * 60 * 1000;
+    return (now - createdTime) > hours24;
+  };
+
+  const expired = isExpired();
 
   const handleDownloadTicket = async () => {
     if (isDownloading) return;
@@ -416,7 +437,7 @@ export default function TicketCard({ ticket, type = "ingresso" }: { ticket: Tick
               />
             </div>
             <span className="font-mono text-[9px] tracking-widest text-neutral-500 text-center select-all">
-              ID: {ticket.id === "0000" ? "#0000" : ticket.id.slice(0, 10).toUpperCase() + "..."}
+              ID: {ticket.id === "0000" ? "#0000" : (ticket.numeroIngresso ? `#${String(ticket.numeroIngresso).padStart(4, '0')}` : ticket.id.slice(0, 10).toUpperCase() + "...")}
             </span>
             <p className="text-[9px] text-neutral-500 text-center px-2 leading-tight">
               Apresente o QR Code na portaria para validação do acesso.
@@ -439,14 +460,24 @@ export default function TicketCard({ ticket, type = "ingresso" }: { ticket: Tick
               )}
             </button>
           </div>
-        ) : ticket.status === "pendente" ? (
+        ) : ticket.status === "pendente" && !expired ? (
           <div className="flex flex-col items-center text-center p-4">
             <div className="w-14 h-14 rounded border border-dashed border-amber-500/40 flex items-center justify-center mb-4 bg-amber-950/10">
               <Clock size={24} className="text-amber-500" />
             </div>
             <p className="text-xs font-black text-white uppercase tracking-wider">Aguardando</p>
             <p className="text-[9px] text-neutral-500 mt-2 px-2">
-              Seu ingresso será liberado na hora assim que o pagamento for confirmado pelo Mercado Pago.
+              Seu ingresso será liberado na hora assim que o pagamento for confirmado pela InfinitePay. Prazo máximo: 24 horas.
+            </p>
+          </div>
+        ) : ticket.status === "pendente" && expired ? (
+          <div className="flex flex-col items-center text-center p-4">
+            <div className="w-14 h-14 rounded border border-dashed border-red-500/40 flex items-center justify-center mb-4 bg-red-950/10">
+              <XCircle size={24} className="text-red-500" />
+            </div>
+            <p className="text-xs font-black text-red-500 uppercase tracking-wider">Expirado</p>
+            <p className="text-[9px] text-neutral-500 mt-2 px-2">
+              O tempo limite para pagamento deste ingresso esgotou.
             </p>
           </div>
         ) : (

@@ -2,9 +2,8 @@
 
 import { useEffect, useState, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { auth, db } from "@/lib/firebase";
+import { auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { getBirthDateFromCPF } from "@/lib/utils";
@@ -78,131 +77,62 @@ function CheckInContent() {
       setLoading(true);
       setErrorMsg("");
 
-      // Caso especial: Ingresso de Teste Infinito #0000
-      if (id === "0000") {
-        const mockTicket: TicketData = {
-          id: "0000",
-          uid: "mock_vitor",
-          nomeComprador: "Vitor Hugo",
-          cpfComprador: "150.773.706-80",
-          lote: "Cortesia de Teste Infinito",
-          valor: 0.00,
-          status: "aprovado",
-          qrCodeData: "SINTONIA360-TEST-TICKET-0000",
-          utilizado: false
-        };
-        setTicket(mockTicket);
-        
-        // Derivar idade
-        const birthDate = getBirthDateFromCPF("15077370680");
-        const calcAge = calculateAge(birthDate);
-        setAge(calcAge);
-        setIsMinor(calcAge < 16);
-        setLoading(false);
-        return;
-      }
+      const res = await fetch(`/api/checkin/lookup?id=${id}`);
+      const data = await res.json();
 
-      const ticketRef = doc(db, "ingressos", id);
-      const ticketSnap = await getDoc(ticketRef);
-
-      if (!ticketSnap.exists()) {
-        setErrorMsg(`Ingresso com ID #${id} não foi encontrado no sistema.`);
+      if (!res.ok) {
+        setErrorMsg(data.error || `Ingresso com ID #${id} não foi encontrado.`);
         setTicket(null);
         setLoading(false);
         return;
       }
 
-      const ticketData = ticketSnap.data() as TicketData;
-      setTicket({ ...ticketData, id: ticketSnap.id });
-
-      // Calcular idade
-      let birthDate = "";
-      
-      // Tentar buscar perfil do comprador para obter dataNascimento real
-      if (ticketData.uid) {
-        const buyerDocSnap = await getDoc(doc(db, "usuarios", ticketData.uid));
-        if (buyerDocSnap.exists() && buyerDocSnap.data().dataNascimento) {
-          birthDate = buyerDocSnap.data().dataNascimento;
-        }
-      }
-
-      // Fallback determinístico baseado no CPF se não encontrar no perfil
-      if (!birthDate && ticketData.cpfComprador) {
-        const cleanCpf = ticketData.cpfComprador.replace(/\D/g, "");
-        birthDate = getBirthDateFromCPF(cleanCpf);
-      }
-
-      if (birthDate) {
-        const calcAge = calculateAge(birthDate);
-        setAge(calcAge);
-        setIsMinor(calcAge < 16);
-      } else {
-        setAge(null);
-        setIsMinor(false);
-      }
-
+      setTicket(data);
+      setAge(data.age);
+      setIsMinor(data.isMinor);
       setLoading(false);
     } catch (error: unknown) {
       console.error("Erro ao buscar ingresso:", error);
-      const msg = error instanceof Error ? error.message : "Erro desconhecido";
-      setErrorMsg(`Erro de conexão ao buscar ingresso: ${msg}`);
+      setErrorMsg("Erro de conexão ao buscar ingresso.");
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (!currentUser) {
-        router.push(`/login?redirect=/admin/check-in?id=${ticketId || ""}`);
-        return;
-      }
-
-      try {
-        // 1. Verificar se é Admin
-        let userDoc = null;
-        if (currentUser.email) {
-          userDoc = await getDoc(doc(db, "usuarios", currentUser.email.toLowerCase()));
-        }
-        if (!userDoc || !userDoc.exists()) {
-          userDoc = await getDoc(doc(db, "usuarios", currentUser.uid));
-        }
-
-        const emailIsAdmin = 
-          currentUser.email?.toLowerCase() === "vitorhugonascimentosique@gmail.com" ||
-          currentUser.email?.toLowerCase() === "henriquetranssilva@gmail.com";
-        const roleIsAdmin = userDoc && userDoc.exists() && userDoc.data().role === "admin";
-
-        if (emailIsAdmin || roleIsAdmin) {
-          setIsAdmin(true);
-          
-          // 2. Buscar dados do Ingresso
-          if (ticketId) {
-            await fetchTicket(ticketId);
-          } else {
-            setErrorMsg("Nenhum ID de ingresso foi fornecido.");
-            setLoading(false);
-          }
-        } else {
-          setIsAdmin(false);
-          setLoading(false);
-        }
-      } catch (error) {
-        console.error("Erro na validação de login admin:", error);
-        setErrorMsg("Ocorreu um erro ao validar seu acesso.");
-        setLoading(false);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [ticketId, router, fetchTicket]);
+    // Remover exigência de autenticação para permitir que qualquer dispositivo valide o QR Code
+    // A segurança é feita na API via verificação do ID secreto do ingresso.
+    setIsAdmin(true); // O acesso é liberado
+    
+    if (ticketId) {
+      fetchTicket(ticketId);
+    } else {
+      setErrorMsg("Nenhum ID de ingresso foi fornecido.");
+      setLoading(false);
+    }
+  }, [ticketId, fetchTicket]);
 
   const handleConfirmCheckIn = async (entregarAutorizacao: boolean = false) => {
     if (!ticket || checkingIn) return;
     setCheckingIn(true);
 
     try {
-      // Caso especial teste infinito
-      if (ticket.id === "0000") {
+      const res = await fetch("/api/checkin/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: ticket.id,
+          type: isParking ? "parking" : "ingresso",
+          entregarAutorizacao
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Erro desconhecido ao confirmar ingresso.");
+      }
+
+      if (data.isMock) {
         setTimeout(() => {
           confetti({
             particleCount: 150,
@@ -215,18 +145,6 @@ function CheckInContent() {
         }, 800);
         return;
       }
-
-      const ticketRef = doc(db, "ingressos", ticket.id);
-      const updateData = isParking ? {
-        parkingUsed: true,
-        parkingCheckedInAt: serverTimestamp(),
-      } : {
-        utilizado: true,
-        checkedInAt: serverTimestamp(),
-        ...(entregarAutorizacao && { autorizacaoEntregue: true })
-      };
-
-      await updateDoc(ticketRef, updateData);
 
       // Trigger Confetti
       confetti({

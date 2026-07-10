@@ -81,6 +81,7 @@ interface Venda {
   checkedInAt?: any;
   uid?: string;
   includeParking?: boolean;
+  numeroIngresso?: number;
 }
 
 const TABS = [
@@ -578,8 +579,8 @@ export default function AdminPage() {
       const paddedId = String(i).padStart(4, "0");
       const docId = `ingresso_${paddedId}`;
 
-      // Verificar se este ingresso já tem posse gravada no Firestore
-      const dbTicket = vendas.find((v) => v.id === docId);
+      // Verificar se este ingresso já tem posse gravada no Firestore pelo numeroIngresso
+      const dbTicket = vendas.find((v) => v.numeroIngresso === i || (!v.numeroIngresso && v.id === docId));
 
       if (dbTicket) {
         list.push(dbTicket);
@@ -1183,7 +1184,7 @@ export default function AdminPage() {
                         const isMock = t.id === "0000";
                         const isUsed = t.utilizado;
                         const isOwnerless = t.status === "disponivel";
-                        const formattedId = isMock ? "#0000" : `#${t.id.replace("ingresso_", "")}`;
+                        const formattedId = isMock ? "#0000" : (t.numeroIngresso ? `#${String(t.numeroIngresso).padStart(4, '0')}` : `#${t.id.replace("ingresso_", "").slice(0, 5)}...`);
 
                         return (
                           <div

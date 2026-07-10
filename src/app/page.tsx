@@ -352,9 +352,9 @@ export default function Home() {
               <div className="p-3 bg-neutral-900 border border-neutral-800 text-primary w-fit mb-5">
                 <Volume2 size={20} />
               </div>
-              <h3 className="font-display font-black text-base uppercase tracking-wider text-white mb-2">Som de Alto Padrão e Qualidade</h3>
+              <h3 className="font-display font-black text-base uppercase tracking-wider text-white mb-2">Som Automotivo</h3>
               <p className="text-neutral-400 text-xs leading-relaxed font-medium">
-                Engenharia acústica avançada com equipamentos importados de última geração, proporcionando clareza sonora absoluta, fidelidade extrema de frequências e graves imersivos na arena 360°.
+                Experiência sonora impactante com um paredão formado por 8 carros exclusivos, garantindo potência e qualidade para uma imersão musical extrema.
               </p>
             </motion.div>
 
@@ -369,9 +369,9 @@ export default function Home() {
               <div className="p-3 bg-neutral-900 border border-neutral-800 text-primary w-fit mb-5">
                 <Zap size={20} />
               </div>
-              <h3 className="font-display font-black text-base uppercase tracking-wider text-white mb-2">Estrutura Cenográfica</h3>
+              <h3 className="font-display font-black text-base uppercase tracking-wider text-white mb-2">Estrutura Completa</h3>
               <p className="text-neutral-400 text-xs leading-relaxed font-medium">
-                Arquitetura de palco centralizada com painéis de LED circulares de alta resolução e lasers potentes, proporcionando uma ambientação intimista e focada.
+                Arquitetura inovadora com palco 360 graus para você curtir de qualquer ângulo, com iluminação de ponta, segurança reforçada e máxima comodidade.
               </p>
             </motion.div>
 

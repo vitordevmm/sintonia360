@@ -69,14 +69,32 @@ export async function POST(request: Request) {
           statusInterno = "cancelado";
         }
 
+        let numeroIngresso = ticketSnap.data().numeroIngresso || null;
+
+        if (statusInterno === "aprovado" && !numeroIngresso) {
+          // Busca o maior número de ingresso já atribuído
+          const maxNumSnap = await adminDb.collection("ingressos")
+            .orderBy("numeroIngresso", "desc")
+            .limit(1)
+            .get();
+          
+          if (!maxNumSnap.empty) {
+            const maxVal = maxNumSnap.docs[0].data().numeroIngresso || 0;
+            numeroIngresso = maxVal + 1;
+          } else {
+            numeroIngresso = 1;
+          }
+        }
+
         // 2. Atualiza o status do ingresso no Firestore
         await docRef.update({
           status: statusInterno,
           paymentId: String(paymentId || ticketId),
+          ...(numeroIngresso ? { numeroIngresso } : {}),
           updatedAt: new Date(),
         });
 
-        console.log(`[Webhook InfinitePay] Ingresso ${ticketId} atualizado para status: ${statusInterno}`);
+        console.log(`[Webhook InfinitePay] Ingresso ${ticketId} atualizado para status: ${statusInterno} (Num: ${numeroIngresso})`);
       } else {
         console.warn(`[Webhook InfinitePay] Ingresso com ID ${ticketId} não encontrado.`);
       }
