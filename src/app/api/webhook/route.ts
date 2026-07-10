@@ -39,9 +39,10 @@ export async function POST(request: Request) {
     console.log(`[Webhook InfinitePay] Body recebido:`, JSON.stringify(body));
 
     // A InfinitePay enviará as atualizações. O identificador que usamos (order_nsu) deve voltar no webhook
-    const ticketId = body.order_nsu || body.reference_id || body.transaction?.order_nsu;
-    const paymentStatus = body.status || body.transaction?.status;
-    const paymentId = body.id || body.transaction?.id || body.payment_id;
+    const dataObj = body.data || body;
+    const ticketId = dataObj.order_nsu || dataObj.reference_id || dataObj.transaction?.order_nsu || body.order_nsu;
+    const paymentStatus = (dataObj.status || dataObj.transaction?.status || body.status)?.toLowerCase();
+    const paymentId = dataObj.id || dataObj.transaction?.id || dataObj.payment_id || body.id;
 
     if (ticketId) {
       const docRef = adminDb.collection("ingressos").doc(ticketId);

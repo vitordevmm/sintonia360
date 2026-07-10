@@ -39,6 +39,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Lote inválido ou esgotado." }, { status: 400 });
     }
 
+    // Verifica se o usuário já possui um ingresso aprovado
+    const userTicketsSnapshot = await adminDb.collection("ingressos")
+      .where("uid", "==", userId)
+      .where("status", "==", "aprovado")
+      .get();
+    
+    if (!userTicketsSnapshot.empty) {
+      return NextResponse.json({ error: "Você já possui um ingresso garantido. Só é permitido um ingresso por pessoa." }, { status: 400 });
+    }
+
     const loteNome = loteData.nome;
     const valor = loteData.valor;
 

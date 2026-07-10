@@ -191,11 +191,24 @@ export default function ProfilePage() {
           currentUser.email?.toLowerCase() === "vitorhugonascimentosique@gmail.com" ||
           currentUser.email?.toLowerCase() === "henriquetranssilva@gmail.com";
 
+        // Lógica de filtragem: Mostrar apenas 1 ingresso (Aprovado tem prioridade. Se não, o Pendente mais recente).
+        let finalTickets: TicketData[] = [];
+        const hasAprovado = fetchedTickets.find(t => t.status === "aprovado" && t.id !== "0000");
+        
+        if (hasAprovado) {
+          finalTickets.push(hasAprovado);
+        } else {
+          const mostRecentPendente = fetchedTickets.find(t => t.status === "pendente");
+          if (mostRecentPendente) {
+            finalTickets.push(mostRecentPendente);
+          }
+        }
+
         if (isAdmin) {
           const hasMockTicket = fetchedTickets.some(t => t.id === "0000");
           if (!hasMockTicket) {
             const isVitor = currentUser.email?.toLowerCase() === "vitorhugonascimentosique@gmail.com";
-            fetchedTickets.unshift({
+            finalTickets.unshift({
               id: "0000",
               nomeComprador: profileData?.nome || (isVitor ? "Vitor Hugo" : "Henrique Silva"),
               cpfComprador: profileData?.cpf ? formatCPF(profileData.cpf) : (isVitor ? "150.773.706-80" : "000.000.000-00"),
@@ -205,10 +218,16 @@ export default function ProfilePage() {
               qrCodeData: "SINTONIA360-TEST-TICKET-0000",
               createdAt: new Date()
             });
+          } else {
+            // Se já existia mock na query original (ex: criado no banco), garante que ele aparece
+            const mockFromDb = fetchedTickets.find(t => t.id === "0000");
+            if (mockFromDb && !finalTickets.some(t => t.id === "0000")) {
+              finalTickets.unshift(mockFromDb);
+            }
           }
         }
 
-        setTickets(fetchedTickets);
+        setTickets(finalTickets);
       } catch (error) {
         console.error("Erro ao buscar dados do perfil:", error);
       } finally {
