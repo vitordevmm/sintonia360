@@ -83,11 +83,14 @@ export async function POST(request: Request) {
     // Gera um identificador de compra único
     const purchaseId = `ticket_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-    // Define a base URL para redirecionamento pós-pagamento de forma robusta
+    // Define a base URL para redirecionamento pós-pagamento
     const host = request.headers.get("host");
     const protocol = host?.includes("localhost") ? "http" : "https";
     const origin = request.headers.get("origin");
     const baseUrl = origin || (host ? `${protocol}://${host}` : (process.env.NEXT_PUBLIC_BASE_URL || "https://sintonia360.vercel.app"));
+    
+    // IMPORTANTE: Forçamos o Webhook na Vercel. Se enviarmos localhost, a InfinitePay não consegue acessar!
+    const webhookBaseUrl = "https://sintonia360.vercel.app";
     const infinitePayHandle = process.env.INFINITEPAY_HANDLE || "sintonia360";
 
     // 1. Cria a preferência de pagamento na InfinitePay
@@ -119,10 +122,8 @@ export async function POST(request: Request) {
         ],
         order_nsu: purchaseId, // Nosso identificador de pedido único
         redirect_url: `${baseUrl}/profile`,
-        // O Webhook enviará notificações para esta URL de callback
-        webhook_url: process.env.WEBHOOK_URL
-          ? `${process.env.WEBHOOK_URL}/api/webhook`
-          : `${baseUrl}/api/webhook`
+        // O Webhook enviará notificações para esta URL de callback fixada na Vercel
+        webhook_url: `${webhookBaseUrl}/api/webhook`
       }),
     });
 

@@ -216,7 +216,7 @@ export default function TicketCard({ ticket, type = "ingresso" }: { ticket: Tick
 
       ctx.fillStyle = "#FFFFFF";
       ctx.font = "bold 20px Arial, Helvetica, sans-serif";
-      ctx.fillText("Bem-te-vi Country Club", 440, 230);
+      ctx.fillText("Capitu", 440, 230);
 
       ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
       ctx.font = "normal 14px Arial, Helvetica, sans-serif";
@@ -381,7 +381,7 @@ export default function TicketCard({ ticket, type = "ingresso" }: { ticket: Tick
             </div>
             <div>
               <p className="text-[9px] text-neutral-500 font-black uppercase tracking-wider">Local</p>
-              <p className="text-xs text-white font-bold">Bem-te-vi Country Club</p>
+              <p className="text-xs text-white font-bold">Capitu</p>
               <p className="text-[9px] text-neutral-400">Tupaciguara, MG</p>
             </div>
           </div>
