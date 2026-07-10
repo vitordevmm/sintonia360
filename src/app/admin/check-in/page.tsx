@@ -39,6 +39,7 @@ interface TicketData {
   utilizado?: boolean;
   checkedInAt?: FirestoreTimestamp | string | number | Date | null;
   autorizacaoEntregue?: boolean;
+  includeParking?: boolean;
   parkingUsed?: boolean;
   parkingCheckedInAt?: FirestoreTimestamp | string | number | Date | null;
 }
@@ -451,7 +452,7 @@ function CheckInContent() {
                   <div className="pt-4 border-t border-neutral-900 mt-4">
                     <p className="text-[9px] text-neutral-500 font-black uppercase">VALOR</p>
                     <p className="text-xl font-black text-primary mt-0.5">
-                      R$ {isParking ? "25.00" : ticket.valor.toFixed(2)}
+                      R$ {isParking ? "25.00" : (ticket.includeParking ? (ticket.valor - 25).toFixed(2) : ticket.valor.toFixed(2))}
                     </p>
                   </div>
                 </div>

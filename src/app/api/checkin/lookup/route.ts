@@ -41,9 +41,14 @@ export async function GET(request: Request) {
     let isMinor = false;
 
     if (ticketData?.uid) {
-      const userSnap = await adminDb.collection("usuarios").doc(ticketData.uid).get();
-      if (userSnap.exists && userSnap.data()?.dataNascimento) {
-        birthDate = userSnap.data()?.dataNascimento;
+      const userQuery = await adminDb.collection("usuarios").where("uid", "==", ticketData.uid).limit(1).get();
+      if (!userQuery.empty) {
+        const userDocData = userQuery.docs[0].data();
+        if (userDocData?.dataNascimento) {
+          birthDate = userDocData.dataNascimento;
+        } else if (userDocData?.idade) {
+          age = userDocData.idade;
+        }
       }
     }
 
@@ -55,6 +60,8 @@ export async function GET(request: Request) {
       if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) {
         age--;
       }
+      isMinor = age < 16;
+    } else if (age !== null) {
       isMinor = age < 16;
     }
 
