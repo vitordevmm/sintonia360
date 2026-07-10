@@ -509,7 +509,7 @@ export default function ProfilePage() {
                 {tickets.map((ticket) => (
                   <div key={ticket.id} className="space-y-8">
                     <TicketCard ticket={ticket} />
-                    {ticket.includeParking && ticket.status === "aprovado" && (
+                    {ticket.includeParking && (
                       <TicketCard ticket={ticket} type="parking" />
                     )}
                   </div>

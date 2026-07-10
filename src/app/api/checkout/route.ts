@@ -74,7 +74,8 @@ export async function POST(request: Request) {
     const purchaseId = `ticket_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
     // Define a base URL para redirecionamento pós-pagamento
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+    const origin = request.headers.get("origin");
+    const baseUrl = origin || process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
     const infinitePayHandle = process.env.INFINITEPAY_HANDLE || "sintonia360";
 
     // 1. Cria a preferência de pagamento na InfinitePay
@@ -109,7 +110,7 @@ export async function POST(request: Request) {
         // O Webhook enviará notificações para esta URL de callback
         webhook_url: process.env.WEBHOOK_URL
           ? `${process.env.WEBHOOK_URL}/api/webhook`
-          : "https://dummy-webhook-url.com/api/webhook"
+          : `${baseUrl}/api/webhook`
       }),
     });
 

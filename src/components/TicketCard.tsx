@@ -15,6 +15,7 @@ interface TicketData {
   qrCodeData: string;
   parkingQrCodeData?: string;
   numeroIngresso?: number;
+  includeParking?: boolean;
   createdAt?: any;
 }
 
@@ -409,7 +410,7 @@ export default function TicketCard({ ticket, type = "ingresso" }: { ticket: Tick
           <div className="text-right">
             <p className="text-[9px] text-neutral-500 font-black uppercase tracking-wider">Valor</p>
             <p className="text-sm font-black text-primary mt-0.5">
-              R$ {type === "parking" ? "25.00" : ticket.valor.toFixed(2)}
+              R$ {type === "parking" ? "25.00" : (ticket.includeParking ? (ticket.valor - 25).toFixed(2) : ticket.valor.toFixed(2))}
             </p>
           </div>
         </div>
