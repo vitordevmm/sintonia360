@@ -489,7 +489,7 @@ export default function ProfilePage() {
             transition={{ duration: 0.6, delay: 0.2, ease: "easeOut" }}
             className="lg:col-span-2 space-y-6"
           >
-            {profile?.dataNascimento && calculateAge(profile.dataNascimento) < 16 && (
+            {profile?.dataNascimento && calculateAge(profile.dataNascimento) < 18 && (
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -504,7 +504,7 @@ export default function ProfilePage() {
                       Autorização Obrigatória para Menores
                     </h3>
                     <p className="text-xs text-neutral-300 font-medium leading-relaxed max-w-xl">
-                      Você tem <strong className="text-white font-bold">{calculateAge(profile.dataNascimento)} anos</strong>. Por ser menor de 16 anos, de acordo com as diretrizes do evento, você **deve** gerar e apresentar a Autorização para Menores de 16 anos assinada por um responsável legal na entrada do festival.
+                      Você tem <strong className="text-white font-bold">{calculateAge(profile.dataNascimento)} anos</strong>. Por ser menor de 18 anos, de acordo com as diretrizes do evento, você **deve** gerar e apresentar a Autorização para Menores de 18 anos assinada por um responsável legal na entrada do festival.
                     </p>
                   </div>
                 </div>

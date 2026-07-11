@@ -105,10 +105,37 @@ export default function TermosPage() {
                   <p className="text-xs sm:text-sm text-neutral-400">
                     <strong className="text-white">Finalidade:</strong> Validação automática e precisa da idade do usuário.
                     <br />
-                    <strong className="text-white">Justificativa Legal:</strong> Cumprimento de obrigação legal e proteção a menores de idade. A data de nascimento permite verificar se o usuário é maior de 18 anos (obrigatório para consumo de bebidas alcoólicas nas áreas VIP) ou se possui menos de 16 anos. Caso o usuário tenha menos de 16 anos, o sistema exige dinamicamente o preenchimento, assinatura e download de uma **Autorização de Menor**, garantindo a conformidade com as diretrizes do Juizado da Infância e Juventude.
+                    <strong className="text-white">Justificativa Legal:</strong> Cumprimento de obrigação legal e proteção a menores de idade. A data de nascimento permite verificar se o usuário é maior de 18 anos (obrigatório para consumo de bebidas alcoólicas nas áreas VIP) ou se possui menos de 18 anos. Caso o usuário tenha menos de 18 anos, o sistema exige dinamicamente o preenchimento, assinatura e download de uma **Autorização de Menor**, garantindo a conformidade com as diretrizes do Juizado da Infância e Juventude.
                   </p>
                 </div>
               </div>
+            </div>
+          </section>
+
+          {/* Política para Menores */}
+          <section className="flat-card p-6 sm:p-8 rounded border border-neutral-800 space-y-4">
+            <h2 className="font-display font-black text-lg sm:text-xl uppercase text-white flex items-center gap-2.5">
+              <Users className="text-primary" size={20} />
+              3. Política e Regras para Menores de Idade
+            </h2>
+            <div className="space-y-3 font-medium text-neutral-400">
+              <p>
+                Ao utilizar nossa plataforma e adquirir ingressos, o usuário concorda <strong>expressa e integralmente</strong> com as seguintes regras de acesso ao evento para menores:
+              </p>
+              <ul className="list-disc pl-6 space-y-2 text-xs sm:text-sm">
+                <li>
+                  <strong className="text-white">Menores de 16 anos:</strong> Apenas poderão acessar o evento se estiverem acompanhados de um responsável legal ou acompanhante maior de idade expressamente nomeado. É <strong>obrigatória</strong> a apresentação do Termo de Autorização (gerado no perfil do usuário) impresso e assinado, juntamente com o documento de identidade oficial (RG) original do menor e do acompanhante nomeado.
+                </li>
+                <li>
+                  <strong className="text-white">Menores entre 16 e 17 anos:</strong> Estão autorizados a acessar o evento desacompanhados, desde que apresentem na portaria o Termo de Autorização impresso e assinado pelo responsável legal e o documento de identidade oficial (RG) original do menor.
+                </li>
+                <li>
+                  <strong className="text-white">Áreas VIP e Bebidas Alcoólicas:</strong> É terminantemente proibido o fornecimento, venda e consumo de bebidas alcoólicas a menores de 18 anos, sob as penalidades do Estatuto da Criança e do Adolescente. O acesso às áreas VIP exclusivas para maiores será rigidamente fiscalizado mediante checagem etária obrigatória na portaria.
+                </li>
+              </ul>
+              <p className="text-xs sm:text-sm text-primary font-bold">
+                O descumprimento destas diretrizes resultará no impedimento de acesso ao evento sem direito a reembolso do valor do ingresso pago.
+              </p>
             </div>
           </section>
 
@@ -116,7 +143,7 @@ export default function TermosPage() {
           <section className="flat-card p-6 sm:p-8 rounded border border-neutral-800 space-y-4">
             <h2 className="font-display font-black text-lg sm:text-xl uppercase text-white flex items-center gap-2.5">
               <Lock className="text-primary" size={20} />
-              3. Onde Armazenamos e Como Protegemos Seus Dados
+              4. Onde Armazenamos e Como Protegemos Seus Dados
             </h2>
             <div className="space-y-3 font-medium text-neutral-400">
               <p>
@@ -140,7 +167,7 @@ export default function TermosPage() {
           <section className="flat-card p-6 sm:p-8 rounded border border-neutral-800 space-y-4">
             <h2 className="font-display font-black text-lg sm:text-xl uppercase text-white flex items-center gap-2.5">
               <Users className="text-primary" size={20} />
-              4. Direitos do Titular dos Dados (Seus Direitos)
+              5. Direitos do Titular dos Dados (Seus Direitos)
             </h2>
             <div className="space-y-3 font-medium text-neutral-400">
               <p>
@@ -163,7 +190,7 @@ export default function TermosPage() {
           <section className="flat-card p-6 sm:p-8 rounded border border-neutral-800 space-y-4">
             <h2 className="font-display font-black text-lg sm:text-xl uppercase text-white flex items-center gap-2.5">
               <HelpCircle className="text-primary" size={20} />
-              5. Política de Reembolso e Desistência
+              6. Política de Reembolso e Desistência
             </h2>
             <div className="space-y-3 font-medium text-neutral-400">
               <p>

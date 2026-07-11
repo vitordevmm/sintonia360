@@ -379,10 +379,13 @@ function CheckInContent() {
                     </div>
                     <div className="space-y-1">
                       <h3 className="font-display font-black text-xs tracking-widest text-amber-500 uppercase">
-                        EXIGE AUTORIZAÇÃO DE MENOR (ABAIXO DE 16 ANOS)
+                        EXIGE AUTORIZAÇÃO DE MENOR (ABAIXO DE 18 ANOS)
                       </h3>
                       <p className="text-xs text-neutral-300 font-medium leading-relaxed">
-                        O portador tem <strong className="text-white font-bold">{age} anos</strong>. De acordo com as diretrizes da <strong>GHVE Eventos</strong>, menores de 16 anos necessitam apresentar o termo de autorização assinado pelo responsável na portaria.
+                        O portador tem <strong className="text-white font-bold">{age} anos</strong>. 
+                        {age !== null && age < 16 
+                          ? " Menores de 16 anos precisam do documento impresso E devem estar acompanhados por um responsável autorizado no documento." 
+                          : " Menores de 18 anos precisam apenas apresentar o documento impresso assinado e seu RG oficial."}
                       </p>
                     </div>
                   </div>
@@ -425,7 +428,7 @@ function CheckInContent() {
                     <div>
                       <p className="text-[9px] text-neutral-500 font-black">IDADE CALCULADA</p>
                       <p className={`${isMinor ? "text-amber-500" : "text-emerald-400"} mt-1`}>
-                        {age !== null ? `${age} anos ${isMinor ? "(Menor de 16)" : "(Permitido)"}` : "Não identificada"}
+                        {age !== null ? `${age} anos ${isMinor ? "(Menor de 18)" : "(Maior de 18)"}` : "Não identificada"}
                       </p>
                     </div>
                     <div>

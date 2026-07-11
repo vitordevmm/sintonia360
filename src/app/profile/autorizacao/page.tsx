@@ -155,7 +155,8 @@ export default function AutorizacaoPage() {
   }
 
   const age = profile?.dataNascimento ? calculateAge(profile.dataNascimento) : 0;
-  const isMinor = age < 16;
+  const isMinor = age < 18;
+  const isUnder16 = age < 16;
 
   return (
     <div className="min-h-screen bg-[#070707] text-white font-sans antialiased print:bg-white print:text-black">
@@ -258,7 +259,7 @@ export default function AutorizacaoPage() {
               <div className="p-4 bg-red-950/20 border border-red-500/20 rounded flex gap-2.5 items-start text-red-400">
                 <ShieldAlert size={18} className="flex-shrink-0 mt-0.5" />
                 <p className="text-[11px] leading-relaxed">
-                  <strong>Aviso:</strong> De acordo com os seus dados cadastrais, você já possui **16 anos ou mais** e não necessita de autorização de menores para ingressar no evento.
+                  <strong>Aviso:</strong> De acordo com os seus dados cadastrais, você já possui **18 anos ou mais** e não necessita de autorização de menores para ingressar no evento.
                 </p>
               </div>
             )}
@@ -302,7 +303,7 @@ export default function AutorizacaoPage() {
                     AUTORIZAÇÃO DE ENTRADA E TERMO DE RESPONSABILIDADE CIVIL E CRIMINAL
                     <br />
                     <span className="text-[12px] font-bold tracking-normal normal-case">
-                      (Para menores de 16 anos desacompanhados ou acompanhados de terceiros)
+                      (Para menores de {isUnder16 ? "16" : "18"} anos {isUnder16 ? "acompanhados de terceiros autorizados" : "desacompanhados"})
                     </span>
                   </h3>
 
@@ -340,7 +341,11 @@ export default function AutorizacaoPage() {
                       </p>
 
                       <p className="text-[11px]">
-                        <strong>4. DO ACOMPANHAMENTO:</strong> Declaro ainda que o menor está autorizado a frequentar o evento desacompanhado, portando este termo assinado em conjunto com documento de identificação original com foto.
+                        <strong>4. DO ACOMPANHAMENTO:</strong> {isUnder16 ? (
+                          <>Declaro ainda que <strong>NOMEIO e AUTORIZO</strong> o(a) Sr(a). <strong className="border-b border-black inline-block px-1 min-w-[200px] text-center font-bold">________________________________</strong>, portador(a) do RG nº <strong className="border-b border-black inline-block px-1 min-w-[120px] text-center font-bold">____________________</strong>, como acompanhante legalmente responsável pelo(a) menor nas dependências do evento, sendo sua presença junto ao menor condição obrigatória para a entrada e permanência.</>
+                        ) : (
+                          <>Declaro ainda que o menor está autorizado a frequentar o evento <strong>desacompanhado</strong>, portando este termo assinado em conjunto com seu documento de identificação original com foto (RG).</>
+                        )}
                       </p>
                     </div>
                   </div>
@@ -373,8 +378,18 @@ export default function AutorizacaoPage() {
                     <p className="text-[9px] font-bold uppercase text-neutral-600">INSTRUÇÕES PARA VALIDAÇÃO NA ENTRADA DO EVENTO:</p>
                     <ul className="text-[8.5px] text-neutral-500 list-disc pl-4 space-y-0.5">
                       <li>Este documento deve ser apresentado na portaria impresso e assinado de próprio punho pelo responsável legal.</li>
-                      <li>É obrigatória a apresentação de documento de identificação original oficial com foto (RG ou CNH) apenas do menor, desde que ele porte esta autorização assinada.</li>
-                      <li>A assinatura deste termo não necessita de reconhecimento em cartório, mas responsabiliza legalmente o assinante.</li>
+                      {isUnder16 ? (
+                        <>
+                          <li>O menor de 16 anos <strong>SÓ PODERÁ INGRESSAR</strong> no evento se estiver acompanhado do responsável nomeado acima.</li>
+                          <li>É obrigatória a apresentação do documento oficial com foto (RG) tanto do <strong>menor</strong> quanto do <strong>acompanhante nomeado</strong>.</li>
+                        </>
+                      ) : (
+                        <>
+                          <li>É obrigatória a apresentação de documento de identificação original com foto (RG ou CNH) apenas do menor, portando esta autorização.</li>
+                          <li>O menor (entre 16 e 17 anos) está expressamente autorizado a entrar desacompanhado.</li>
+                        </>
+                      )}
+                      <li>A assinatura deste termo não necessita de reconhecimento em cartório, mas responsabiliza civil e criminalmente o assinante.</li>
                     </ul>
                   </div>
                 </div>

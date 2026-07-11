@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged, User } from "firebase/auth";
@@ -43,7 +43,10 @@ import {
   UserPlus,
   Trash2,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Car
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { motion, AnimatePresence } from "framer-motion";
@@ -81,6 +84,8 @@ interface Venda {
   checkedInAt?: any;
   uid?: string;
   includeParking?: boolean;
+  parkingUsed?: boolean;
+  parkingCheckedInAt?: any;
   numeroIngresso?: number;
 }
 
@@ -88,7 +93,9 @@ const TABS = [
   { id: "insights", label: "Insights", icon: BarChart3 },
   { id: "vendas", label: "Vendas", icon: Calendar },
   { id: "ingressos", label: "Ingressos", icon: Ticket },
+  { id: "estacionamento", label: "Estacionamento", icon: Car },
   { id: "sorteios", label: "Sorteios", icon: Gift },
+  { id: "usuarios", label: "Usuários", icon: Users },
 ] as const;
 
 type TabId = typeof TABS[number]["id"];
@@ -105,7 +112,6 @@ const formatCPF = (cpf: string) => {
 export default function AdminPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [provisioning, setProvisioning] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [roleUpdating, setRoleUpdating] = useState(false);
@@ -123,15 +129,33 @@ export default function AdminPage() {
   });
   const [sorteios, setSorteios] = useState<Sorteio[]>([]);
   const [vendas, setVendas] = useState<Venda[]>([]);
+  const [usuariosList, setUsuariosList] = useState<any[]>([]);
 
   // Vendas Filter & Search States
   const [vendasFilter, setVendasFilter] = useState<"todos" | "aprovado" | "pendente" | "cancelado">("todos");
   const [vendasSearch, setVendasSearch] = useState("");
+  const [vendasCurrentPage, setVendasCurrentPage] = useState(1);
+  const [expandedVendasGroups, setExpandedVendasGroups] = useState<string[]>([]);
+
+  const toggleVendasGroup = (key: string) => {
+    setExpandedVendasGroups(prev => 
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    );
+  };
 
   // Ingressos Portaria Search, Filters, Assignment, Pagination States
   const [ingressosSearch, setIngressosSearch] = useState("");
   const [ingressosFilter, setIngressosFilter] = useState<"todos" | "com_dono" | "sem_dono" | "validados">("todos");
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Estacionamento Portaria States
+  const [estacionamentoSearch, setEstacionamentoSearch] = useState("");
+  const [estacionamentoFilter, setEstacionamentoFilter] = useState<"todos" | "com_dono" | "sem_dono" | "validados">("todos");
+  const [estacionamentoCurrentPage, setEstacionamentoCurrentPage] = useState(1);
+
+  // Usuários States
+  const [usuariosSearch, setUsuariosSearch] = useState("");
+  const [usuariosCurrentPage, setUsuariosCurrentPage] = useState(1);
   const [assignCpfInput, setAssignCpfInput] = useState<{ [key: string]: string }>({});
   const [assignLoading, setAssignLoading] = useState<{ [key: string]: boolean }>({});
   const [checkInLoading, setCheckInLoading] = useState<{ [key: string]: boolean }>({});
@@ -277,6 +301,11 @@ export default function AdminPage() {
     const unsubUsuarios = onSnapshot(
       qUsuarios,
       (snapshot) => {
+        const fetchedUsers: any[] = [];
+        snapshot.forEach((doc) => {
+          fetchedUsers.push({ id: doc.id, ...doc.data() });
+        });
+        setUsuariosList(fetchedUsers);
         setMetrics((prev) => ({
           ...prev,
           totalUsuarios: snapshot.size,
@@ -395,7 +424,7 @@ export default function AdminPage() {
   };
 
   // Portaria Check-In Action
-  const handleCheckInTicket = async (ticketId: string) => {
+  const handleCheckInTicket = async (ticketId: string, isParking = false) => {
     // 1. O ingresso de teste #0000 é infinito, nunca fica Utilizado permanently!
     if (ticketId === "0000") {
       setCheckInLoading((prev) => ({ ...prev, [ticketId]: true }));
@@ -414,8 +443,13 @@ export default function AdminPage() {
     setCheckInLoading((prev) => ({ ...prev, [ticketId]: true }));
     try {
       await updateDoc(doc(db, "ingressos", ticketId), {
-        utilizado: true,
-        checkedInAt: serverTimestamp(),
+        ...(isParking ? {
+          parkingUsed: true,
+          parkingCheckedInAt: serverTimestamp(),
+        } : {
+          utilizado: true,
+          checkedInAt: serverTimestamp(),
+        })
       });
       confetti({
         particleCount: 50,
@@ -460,16 +494,18 @@ export default function AdminPage() {
       const userDoc = qSnap.docs[0];
       const userData = userDoc.data();
 
-      // Gravar posse do ingresso no Firestore
+      const isParkingSlot = ticketId.startsWith("vaga_");
+
       await setDoc(doc(db, "ingressos", ticketId), {
         id: ticketId,
         uid: userData.uid || userDoc.id,
         nomeComprador: userData.nome,
         cpfComprador: formatCPF(userData.cpf),
-        lote: "Atribuído Manualmente (Painel)",
-        valor: 55.00,
+        lote: isParkingSlot ? "Estacionamento (Painel)" : "Atribuído Manualmente (Painel)",
+        valor: isParkingSlot ? 25.00 : 55.00,
         status: "aprovado",
         utilizado: false,
+        includeParking: isParkingSlot,
         createdAt: new Date()
       });
 
@@ -490,85 +526,37 @@ export default function AdminPage() {
   };
 
   // Portaria Retirar Ingresso (Remover posse - volta a ficar disponível "Sem Dono")
-  const handleRevokeTicket = async (ticketId: string) => {
+  const handleRevokeTicket = async (ticketId: string, isParking = false) => {
     if (ticketId === "0000") {
       showToast("Não é possível retirar a posse do ingresso de teste #0000!", "warning");
       return;
     }
 
-    if (!confirm(`Tem certeza que deseja retirar este ingresso da posse do comprador atual? Ele não sumirá, mas ficará "Sem Dono" e disponível para venda.`)) {
+    if (!confirm(`Tem certeza que deseja retirar esta posse do comprador atual?`)) {
       return;
     }
 
     setRevokeLoading((prev) => ({ ...prev, [ticketId]: true }));
     try {
-      await deleteDoc(doc(db, "ingressos", ticketId));
-      showToast("Ingresso liberado! Ficou 'Sem Dono' e disponível para vendas.", "success");
+      if (isParking && !ticketId.startsWith("vaga_")) {
+        // Se for um ingresso real que comprou estacionamento junto, a gente só remove o estacionamento.
+        await updateDoc(doc(db, "ingressos", ticketId), {
+          includeParking: false,
+          parkingUsed: false
+        });
+        showToast("Estacionamento retirado deste ingresso!", "success");
+      } else {
+        await deleteDoc(doc(db, "ingressos", ticketId));
+        showToast("Ingresso/Vaga liberado! Ficou 'Sem Dono' e disponível para vendas.", "success");
+      }
     } catch (error) {
-      console.error("Erro ao liberar ingresso:", error);
-      showToast("Erro ao remover a posse do ingresso do banco de dados.", "error");
+      console.error("Erro ao liberar posse:", error);
+      showToast("Erro ao remover a posse do banco de dados.", "error");
     } finally {
       setRevokeLoading((prev) => ({ ...prev, [ticketId]: false }));
     }
   };
 
-  // Provisionar Dados Base
-  const handleProvisionarDados = async () => {
-    if (!user) return;
-    setProvisioning(true);
-
-    try {
-      const batch = writeBatch(db);
-
-      // 1. Criar usuários fictícios
-      const mockUsers = [
-        { uid: "mock_user_1", nome: "Bruno Henrique Costa", cpf: "12345678901", email: "bruno@email.com", telefone: "11988887777", role: "user" },
-        { uid: "mock_user_2", nome: "Mariana Alcantara Dias", cpf: "98765432109", email: "mariana@email.com", telefone: "11966665555", role: "user" },
-        { uid: "mock_user_3", nome: "Rodrigo Vasconcelos", cpf: "54321678909", email: "rodrigo@email.com", telefone: "11977774444", role: "user" },
-      ];
-
-      mockUsers.forEach((u) => {
-        batch.set(doc(db, "usuarios", u.email.toLowerCase()), {
-          ...u,
-          createdAt: new Date(),
-        });
-      });
-
-      // 2. Criar ingressos fictícios atrelados à grade de 1050 ingressos!
-      // ingresso_0001, ingresso_0002, ingresso_0003
-      const mockIngressos = [
-        { id: "ingresso_0001", uid: "mock_user_1", nomeComprador: "Bruno Henrique Costa", cpfComprador: "123.456.789-01", lote: "2º Lote - Pista Premium", valor: 55.00, status: "aprovado", qrCodeData: "ticket_mock_bruno_code", paymentId: "mp_pay_88849", utilizado: false, createdAt: new Date() },
-        { id: "ingresso_0002", uid: "mock_user_2", nomeComprador: "Mariana Alcantara Dias", cpfComprador: "987.654.321-09", lote: "3º Lote - VIP Frontstage", valor: 70.00, status: "aprovado", qrCodeData: "ticket_mock_mariana_code", paymentId: "mp_pay_33910", utilizado: true, checkedInAt: new Date(Date.now() - 1800000), createdAt: new Date(Date.now() - 3600000) },
-        { id: "ingresso_0003", uid: "mock_user_3", nomeComprador: "Rodrigo Vasconcelos", cpfComprador: "543.216.789-09", lote: "2º Lote - Pista Premium", valor: 55.00, status: "pendente", qrCodeData: "ticket_mock_rodrigo_code", paymentId: "mp_pay_55941", utilizado: false, createdAt: new Date(Date.now() - 7200000) },
-      ];
-
-      mockIngressos.forEach((i) => {
-        batch.set(doc(db, "ingressos", i.id), i);
-      });
-
-      // 3. Sorteio
-      batch.set(doc(db, "sorteios", "sorteio_mock_vip"), {
-        titulo: "VIP Frontstage Upgrade + Consumação R$ 100",
-        descricao: "Sorteio promocional valendo upgrade de setor e crédito para consumação de bebidas no bar.",
-        status: "ativo",
-        participantes: ["mock_user_1", "mock_user_2", "mock_user_3", user.uid],
-        ganhadorUid: null,
-        ganhadorNome: null,
-        imagemUrl: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=600&auto=format&fit=crop&q=80",
-        dataInicio: new Date(),
-        dataFim: new Date(Date.now() + 86400000 * 7),
-        createdAt: new Date(),
-      });
-
-      await batch.commit();
-      showToast("Banco de dados de testes provisionado com sucesso!", "success");
-    } catch (error) {
-      console.error("Erro ao provisionar banco:", error);
-      showToast("Erro ao provisionar banco.", "error");
-    } finally {
-      setProvisioning(false);
-    }
-  };
 
   // GERAÇÃO E ESTRUTURA DOS 1050 INGRESSOS OFICIAIS + INGRESSO #0000
   const build1050TicketsGrid = () => {
@@ -614,6 +602,58 @@ export default function AdminPage() {
       });
     }
 
+    return list;
+  };
+
+  // GERAÇÃO E ESTRUTURA DAS 50 VAGAS DE ESTACIONAMENTO
+  const build50ParkingGrid = () => {
+    const list: any[] = [];
+    const TOTAL_PARKING = 50;
+    
+    // Pegar todas as vendas com estacionamento
+    const parkingTickets = vendas.filter(v => v.includeParking);
+    
+    const explicitVagas = new Map();
+    const floatingVagas: any[] = [];
+
+    parkingTickets.forEach(pt => {
+      if (pt.id.startsWith("vaga_")) {
+        const num = parseInt(pt.id.replace("vaga_", ""), 10);
+        explicitVagas.set(num, pt);
+      } else {
+        floatingVagas.push(pt);
+      }
+    });
+
+    for (let i = 1; i <= TOTAL_PARKING; i++) {
+      const paddedId = String(i).padStart(2, "0");
+      const docId = `vaga_${paddedId}`;
+      
+      let dbTicket = explicitVagas.get(i);
+      if (!dbTicket && floatingVagas.length > 0) {
+        dbTicket = floatingVagas.shift();
+      }
+
+      if (dbTicket) {
+        list.push({
+           ...dbTicket,
+           displayId: docId,
+        });
+      } else {
+        list.push({
+          id: docId,
+          displayId: docId,
+          nomeComprador: "",
+          cpfComprador: "",
+          lote: "Vaga Livre",
+          valor: 25.00,
+          status: "disponivel",
+          createdAt: null,
+          utilizado: false,
+          includeParking: true
+        });
+      }
+    }
     return list;
   };
 
@@ -684,7 +724,7 @@ export default function AdminPage() {
   // Lógica de Filtro e Busca para Aba VENDAS
   const filteredVendas = vendas.filter((v) => {
     const term = vendasSearch.toLowerCase();
-    const cleanCpf = v.cpfComprador.replace(/\D/g, "");
+    const cleanCpf = (v.cpfComprador || "").replace(/\D/g, "");
     const cleanSearch = vendasSearch.replace(/\D/g, "");
     const matchesSearch =
       v.nomeComprador.toLowerCase().includes(term) ||
@@ -693,6 +733,35 @@ export default function AdminPage() {
     const matchesFilter = vendasFilter === "todos" ? true : v.status === vendasFilter;
     return matchesSearch && matchesFilter;
   });
+
+  // Agrupamento de Vendas por Comprador (CPF ou Nome)
+  const groupedVendas: { key: string; mainVenda: Venda; subVendas: Venda[] }[] = [];
+  filteredVendas.forEach((venda) => {
+    const cleanCpf = (venda.cpfComprador || "").replace(/\D/g, "");
+    const key = cleanCpf ? cleanCpf : venda.nomeComprador.toLowerCase();
+    
+    if (!key) {
+      groupedVendas.push({ key: venda.id, mainVenda: venda, subVendas: [] });
+      return;
+    }
+
+    const existingGroup = groupedVendas.find((g) => g.key === key);
+    if (existingGroup) {
+      existingGroup.subVendas.push(venda);
+    } else {
+      groupedVendas.push({ key, mainVenda: venda, subVendas: [] });
+    }
+  });
+
+  // Paginação das Vendas
+  const totalVendasGroups = groupedVendas.length;
+  const totalVendasPages = Math.max(Math.ceil(totalVendasGroups / ITEMS_PER_PAGE), 1);
+  const activeVendasPage = vendasCurrentPage > totalVendasPages ? 1 : vendasCurrentPage;
+  
+  const paginatedVendas = groupedVendas.slice(
+    (activeVendasPage - 1) * ITEMS_PER_PAGE,
+    activeVendasPage * ITEMS_PER_PAGE
+  );
 
   // Lógica de Busca e Filtro para Aba INGRESSOS (1050 ingressos)
   const allGeneratedIngressos = build1050TicketsGrid();
@@ -733,6 +802,72 @@ export default function AdminPage() {
     (activePage - 1) * ITEMS_PER_PAGE,
     activePage * ITEMS_PER_PAGE
   );
+
+  // Lógica de Busca e Filtro para Aba ESTACIONAMENTO (50 vagas)
+  const allGeneratedEstacionamento = build50ParkingGrid();
+
+  const filteredEstacionamento = allGeneratedEstacionamento.filter((t) => {
+    const term = estacionamentoSearch.toLowerCase();
+    const cleanCpf = (t.cpfComprador || "").replace(/\D/g, "");
+    const cleanSearch = estacionamentoSearch.replace(/\D/g, "");
+    const matchesSearch =
+      (t.nomeComprador || "").toLowerCase().includes(term) ||
+      (t.displayId || "").toLowerCase().includes(term) ||
+      (t.displayId || "").replace("vaga_", "").includes(term) ||
+      (cleanCpf && cleanSearch && cleanCpf.includes(cleanSearch));
+
+    if (!matchesSearch) return false;
+
+    if (estacionamentoFilter === "com_dono") {
+      return t.status !== "disponivel";
+    }
+    if (estacionamentoFilter === "sem_dono") {
+      return t.status === "disponivel";
+    }
+    if (estacionamentoFilter === "validados") {
+      return (t.parkingUsed || (t.id.startsWith("vaga_") ? t.utilizado : false)) === true;
+    }
+    return true;
+  });
+
+  // Paginação do Estacionamento
+  const totalFilteredEstacionamento = filteredEstacionamento.length;
+  const totalPagesEstacionamento = Math.max(Math.ceil(totalFilteredEstacionamento / ITEMS_PER_PAGE), 1);
+  const activeEstacionamentoPage = estacionamentoCurrentPage > totalPagesEstacionamento ? 1 : estacionamentoCurrentPage;
+  
+  const paginatedEstacionamento = filteredEstacionamento.slice(
+    (activeEstacionamentoPage - 1) * ITEMS_PER_PAGE,
+    activeEstacionamentoPage * ITEMS_PER_PAGE
+  );
+
+  // Lógica de Busca e Filtro para Aba USUÁRIOS
+  const filteredUsuarios = usuariosList.filter((u) => {
+    const term = usuariosSearch.toLowerCase();
+    const cleanCpf = (u.cpf || "").replace(/\D/g, "");
+    const cleanSearch = usuariosSearch.replace(/\D/g, "");
+    
+    return (
+      (u.nome || "").toLowerCase().includes(term) ||
+      (u.email || "").toLowerCase().includes(term) ||
+      (cleanCpf && cleanSearch && cleanCpf.includes(cleanSearch))
+    );
+  });
+
+  const totalFilteredUsuarios = filteredUsuarios.length;
+  const totalPagesUsuarios = Math.max(Math.ceil(totalFilteredUsuarios / ITEMS_PER_PAGE), 1);
+  const activeUsuariosPage = usuariosCurrentPage > totalPagesUsuarios ? 1 : usuariosCurrentPage;
+  
+  const paginatedUsuarios = filteredUsuarios.slice(
+    (activeUsuariosPage - 1) * ITEMS_PER_PAGE,
+    activeUsuariosPage * ITEMS_PER_PAGE
+  );
+
+  const maskCpf = (cpf: string) => {
+    if (!cpf) return "Não informado";
+    const clean = cpf.replace(/\D/g, "");
+    if (clean.length !== 11) return cpf;
+    return `***.${clean.slice(3, 6)}.${clean.slice(6, 9)}-**`;
+  };
 
   // CÁLCULO DE DADOS REAIS DE DESEMPENHO SEMANAL
   const computeWeeklyPerformance = () => {
@@ -801,25 +936,6 @@ export default function AdminPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleProvisionarDados}
-              disabled={provisioning}
-              className="flex items-center gap-2 px-4 py-2.5 rounded border border-neutral-800 bg-neutral-900/50 hover:border-primary/30 text-primary transition-all font-bold text-xs uppercase cursor-pointer"
-            >
-              {provisioning ? (
-                <>
-                  <Loader2 size={13} className="animate-spin" />
-                  Provisionando...
-                </>
-              ) : (
-                <>
-                  <Database size={13} />
-                  Dados de Teste
-                </>
-              )}
-            </button>
-          </div>
         </div>
 
         {/* ---------------- SLIDING TAB NAVIGATION MENU ---------------- */}
@@ -834,6 +950,8 @@ export default function AdminPage() {
                   onClick={() => {
                     setActiveTab(tab.id);
                     setCurrentPage(1); // Resetar página ao trocar de aba
+                    setVendasCurrentPage(1);
+                    setExpandedVendasGroups([]);
                   }}
                   className={`relative flex items-center justify-center gap-2 px-3 py-2.5 text-xs sm:text-sm font-black uppercase tracking-wider rounded-md transition-colors cursor-pointer flex-1 z-10 select-none ${
                     isActive ? "text-black" : "text-neutral-500 hover:text-white"
@@ -868,9 +986,12 @@ export default function AdminPage() {
               {activeTab === "insights" && (
                 <div className="space-y-8">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <div className="flat-card p-6 rounded border border-neutral-800 flex items-center justify-between shadow-lg">
+                    <div 
+                      onClick={() => { setActiveTab("vendas"); setCurrentPage(1); }}
+                      className="flat-card p-6 rounded border border-neutral-800 flex items-center justify-between shadow-lg cursor-pointer hover:border-primary/50 transition-colors group"
+                    >
                       <div className="space-y-1.5">
-                        <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Faturamento Total</p>
+                        <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider group-hover:text-primary/80 transition-colors">Faturamento Total</p>
                         <h3 className="font-display font-black text-3xl text-primary tracking-tighter">
                           R$ {metrics.faturamento.toFixed(2)}
                         </h3>
@@ -878,14 +999,17 @@ export default function AdminPage() {
                           <TrendingUp size={10} /> Conciliado MP
                         </p>
                       </div>
-                      <div className="p-3.5 rounded bg-neutral-900 border border-neutral-800 text-primary">
+                      <div className="p-3.5 rounded bg-neutral-900 border border-neutral-800 text-primary group-hover:bg-primary/10 transition-colors">
                         <TrendingUp size={24} />
                       </div>
                     </div>
 
-                    <div className="flat-card p-6 rounded border border-neutral-800 flex items-center justify-between shadow-lg">
+                    <div 
+                      onClick={() => { setActiveTab("ingressos"); setCurrentPage(1); }}
+                      className="flat-card p-6 rounded border border-neutral-800 flex items-center justify-between shadow-lg cursor-pointer hover:border-primary/50 transition-colors group"
+                    >
                       <div className="space-y-1.5">
-                        <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Ingressos Vendidos</p>
+                        <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider group-hover:text-white transition-colors">Ingressos Vendidos</p>
                         <h3 className="font-display font-black text-3xl text-white tracking-tighter">
                           {metrics.totalVendas}
                         </h3>
@@ -893,32 +1017,39 @@ export default function AdminPage() {
                           Total emitido no sistema
                         </p>
                       </div>
-                      <div className="p-3.5 rounded bg-neutral-900 border border-neutral-800 text-white">
+                      <div className="p-3.5 rounded bg-neutral-900 border border-neutral-800 text-white group-hover:bg-white/10 transition-colors">
                         <Ticket size={24} />
                       </div>
                     </div>
 
-                    <div className="flat-card p-6 rounded border border-neutral-800 flex items-center justify-between shadow-lg">
+                    <div 
+                      onClick={() => { setActiveTab("usuarios"); setCurrentPage(1); }}
+                      className="flat-card p-6 rounded border border-neutral-800 flex items-center justify-between shadow-lg cursor-pointer hover:border-primary/50 transition-colors group"
+                    >
                       <div className="space-y-1.5">
-                        <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Usuários Registrados</p>
+                        <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider group-hover:text-white transition-colors">Usuários Registrados</p>
                         <h3 className="font-display font-black text-3xl text-white tracking-tighter">
                           {metrics.totalUsuarios}
                         </h3>
                         <p className="text-[9px] text-neutral-500 uppercase font-bold">Base Integrada Firestore</p>
                       </div>
-                      <div className="p-3.5 rounded bg-neutral-900 border border-neutral-800 text-neutral-400">
+                      <div className="p-3.5 rounded bg-neutral-900 border border-neutral-800 text-neutral-400 group-hover:text-white transition-colors">
                         <Users size={24} />
                       </div>
                     </div>
-                    <div className="flat-card p-6 rounded border border-neutral-800 flex items-center justify-between shadow-lg">
+
+                    <div 
+                      onClick={() => { setActiveTab("estacionamento"); setCurrentPage(1); }}
+                      className="flat-card p-6 rounded border border-neutral-800 flex items-center justify-between shadow-lg cursor-pointer hover:border-primary/50 transition-colors group"
+                    >
                       <div className="space-y-1.5">
-                        <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Estacionamento</p>
+                        <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider group-hover:text-white transition-colors">Estacionamento</p>
                         <h3 className="font-display font-black text-3xl text-white tracking-tighter">
                           {metrics.totalEstacionamento} <span className="text-sm text-neutral-500">/ 50</span>
                         </h3>
                         <p className="text-[9px] text-neutral-500 uppercase font-bold">Vagas Vendidas</p>
                       </div>
-                      <div className="p-3.5 rounded bg-neutral-900 border border-neutral-800 text-neutral-400">
+                      <div className="p-3.5 rounded bg-neutral-900 border border-neutral-800 text-neutral-400 group-hover:text-white transition-colors">
                         <ShieldCheck size={24} />
                       </div>
                     </div>
@@ -1056,63 +1187,189 @@ export default function AdminPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-neutral-900 font-medium">
-                          {filteredVendas.length === 0 ? (
+                          {paginatedVendas.length === 0 ? (
                             <tr>
                               <td colSpan={5} className="px-6 py-12 text-center text-neutral-500 font-bold">
                                 Nenhuma transação registrada que corresponda aos filtros de busca.
                               </td>
                             </tr>
                           ) : (
-                            filteredVendas.map((venda) => (
-                              <tr key={venda.id} className="hover:bg-neutral-900/40 transition-colors">
-                                <td className="px-6 py-4 space-y-0.5">
-                                  <div className="font-bold text-white uppercase">{venda.nomeComprador}</div>
-                                  <div className="text-[10px] text-neutral-500">{venda.cpfComprador || "CPF não fornecido"}</div>
-                                </td>
-                                <td className="px-6 py-4 text-neutral-300 font-bold uppercase">{venda.lote}</td>
-                                <td className="px-6 py-4 font-black text-white">R$ {venda.valor.toFixed(2)}</td>
-                                <td className="px-6 py-4">
-                                  <span
-                                    className={`px-2.5 py-1 rounded border text-[9px] font-black uppercase inline-flex items-center gap-1 ${
-                                      venda.status === "aprovado"
-                                        ? "bg-emerald-950/20 border-emerald-500/20 text-emerald-400"
-                                        : venda.status === "pendente"
-                                        ? "bg-amber-950/20 border-amber-500/20 text-amber-400"
-                                        : "bg-red-950/20 border-red-500/20 text-red-400"
-                                    }`}
-                                  >
-                                    <span className={`w-1.5 h-1.5 rounded-full ${
-                                      venda.status === "aprovado" ? "bg-emerald-400" : venda.status === "pendente" ? "bg-amber-400" : "bg-red-400"
-                                    }`} />
-                                    {venda.status}
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4 text-right text-neutral-500">
-                                  {venda.createdAt?.toDate ? (
-                                    venda.createdAt.toDate().toLocaleDateString("pt-BR", {
-                                      day: "2-digit",
-                                      month: "2-digit",
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    })
-                                  ) : venda.createdAt instanceof Date ? (
-                                    venda.createdAt.toLocaleDateString("pt-BR", {
-                                      day: "2-digit",
-                                      month: "2-digit",
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    })
-                                  ) : (
-                                    "Agora"
-                                  )}
-                                </td>
-                              </tr>
-                            ))
+                            paginatedVendas.map((group) => {
+                              const isExpanded = expandedVendasGroups.includes(group.key);
+                              const hasSubVendas = group.subVendas.length > 0;
+                              
+                              return (
+                                <Fragment key={group.key}>
+                                  <tr className="hover:bg-neutral-900/40 transition-colors">
+                                    <td className="px-6 py-4 space-y-0.5">
+                                      <div className="flex items-center gap-2">
+                                        <div className="font-bold text-white uppercase">{group.mainVenda.nomeComprador}</div>
+                                        {hasSubVendas && (
+                                          <button
+                                            onClick={() => toggleVendasGroup(group.key)}
+                                            className="p-1 rounded bg-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors"
+                                            title="Ver outros pedidos"
+                                          >
+                                            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                          </button>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <div className="text-[10px] text-neutral-500">{group.mainVenda.cpfComprador || "CPF não fornecido"}</div>
+                                        {hasSubVendas && (
+                                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/20 text-primary font-bold">
+                                            +{group.subVendas.length}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-4 text-neutral-300 font-bold uppercase">{group.mainVenda.lote}</td>
+                                    <td className="px-6 py-4 font-black text-white">R$ {group.mainVenda.valor.toFixed(2)}</td>
+                                    <td className="px-6 py-4">
+                                      <span
+                                        className={`px-2.5 py-1 rounded border text-[9px] font-black uppercase inline-flex items-center gap-1 ${
+                                          group.mainVenda.status === "aprovado"
+                                            ? "bg-emerald-950/20 border-emerald-500/20 text-emerald-400"
+                                            : group.mainVenda.status === "pendente"
+                                            ? "bg-amber-950/20 border-amber-500/20 text-amber-400"
+                                            : "bg-red-950/20 border-red-500/20 text-red-400"
+                                        }`}
+                                      >
+                                        <span className={`w-1.5 h-1.5 rounded-full ${
+                                          group.mainVenda.status === "aprovado" ? "bg-emerald-400" : group.mainVenda.status === "pendente" ? "bg-amber-400" : "bg-red-400"
+                                        }`} />
+                                        {group.mainVenda.status}
+                                      </span>
+                                    </td>
+                                    <td className="px-6 py-4 text-right text-neutral-500">
+                                      {group.mainVenda.createdAt?.toDate ? (
+                                        group.mainVenda.createdAt.toDate().toLocaleDateString("pt-BR", {
+                                          day: "2-digit",
+                                          month: "2-digit",
+                                          hour: "2-digit",
+                                          minute: "2-digit",
+                                        })
+                                      ) : group.mainVenda.createdAt instanceof Date ? (
+                                        group.mainVenda.createdAt.toLocaleDateString("pt-BR", {
+                                          day: "2-digit",
+                                          month: "2-digit",
+                                          hour: "2-digit",
+                                          minute: "2-digit",
+                                        })
+                                      ) : (
+                                        "Agora"
+                                      )}
+                                    </td>
+                                  </tr>
+                                  {isExpanded && group.subVendas.map((subVenda) => (
+                                    <tr
+                                      key={subVenda.id} 
+                                      className="bg-neutral-900/20 border-l-[3px] border-l-primary/50"
+                                    >
+                                      <td className="px-6 py-3 pl-8 space-y-0.5 relative">
+                                        <div className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-[1px] bg-neutral-800"></div>
+                                        <div className="absolute left-3 top-0 bottom-1/2 w-[1px] bg-neutral-800"></div>
+                                        <div className="text-[11px] font-bold text-neutral-400 uppercase">{subVenda.nomeComprador}</div>
+                                        <div className="text-[9px] text-neutral-600">{subVenda.cpfComprador || "CPF não fornecido"}</div>
+                                      </td>
+                                      <td className="px-6 py-3 text-neutral-400 text-[11px] font-bold uppercase">{subVenda.lote}</td>
+                                      <td className="px-6 py-3 font-black text-neutral-300 text-[11px]">R$ {subVenda.valor.toFixed(2)}</td>
+                                      <td className="px-6 py-3">
+                                        <span
+                                          className={`px-2 py-0.5 rounded border text-[8px] font-black uppercase inline-flex items-center gap-1 ${
+                                            subVenda.status === "aprovado"
+                                              ? "bg-emerald-950/20 border-emerald-500/20 text-emerald-400"
+                                              : subVenda.status === "pendente"
+                                              ? "bg-amber-950/20 border-amber-500/20 text-amber-400"
+                                              : "bg-red-950/20 border-red-500/20 text-red-400"
+                                          }`}
+                                        >
+                                          {subVenda.status}
+                                        </span>
+                                      </td>
+                                      <td className="px-6 py-3 text-right text-neutral-600 text-[11px]">
+                                        {subVenda.createdAt?.toDate ? (
+                                          subVenda.createdAt.toDate().toLocaleDateString("pt-BR", {
+                                            day: "2-digit",
+                                            month: "2-digit",
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          })
+                                        ) : subVenda.createdAt instanceof Date ? (
+                                          subVenda.createdAt.toLocaleDateString("pt-BR", {
+                                            day: "2-digit",
+                                            month: "2-digit",
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          })
+                                        ) : (
+                                          "Agora"
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </Fragment>
+                              );
+                            })
                           )}
                         </tbody>
                       </table>
                     </div>
                   </div>
+
+                  {/* Paginação de Vendas */}
+                  {totalVendasPages > 1 && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-lg bg-neutral-950 border border-neutral-900 text-xs mt-4">
+                      <p className="text-neutral-500 font-bold uppercase tracking-wider">
+                        Exibindo de {((activeVendasPage - 1) * ITEMS_PER_PAGE) + 1} a {Math.min(activeVendasPage * ITEMS_PER_PAGE, totalVendasGroups)} de {totalVendasGroups} compradores encontrados
+                      </p>
+
+                      <div className="flex items-center space-x-1.5">
+                        <button
+                          onClick={() => setVendasCurrentPage((p) => Math.max(p - 1, 1))}
+                          disabled={activeVendasPage === 1}
+                          className="p-2 rounded border border-neutral-800 bg-neutral-900/50 hover:bg-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
+
+                        <div className="flex items-center space-x-1">
+                          {Array.from({ length: totalVendasPages }).map((_, index) => {
+                            const pIndex = index + 1;
+                            const isCurrent = pIndex === activeVendasPage;
+                            if (pIndex !== 1 && pIndex !== totalVendasPages && Math.abs(pIndex - activeVendasPage) > 2) {
+                              if (pIndex === 2 || pIndex === totalVendasPages - 1) {
+                                return <span key={pIndex} className="text-neutral-700 font-bold px-1 select-none">...</span>;
+                              }
+                              return null;
+                            }
+
+                            return (
+                              <button
+                                key={pIndex}
+                                onClick={() => setVendasCurrentPage(pIndex)}
+                                className={`px-3 py-1.5 rounded text-xs font-black select-none cursor-pointer ${
+                                  isCurrent
+                                    ? "bg-primary text-black"
+                                    : "bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white"
+                                }`}
+                              >
+                                {pIndex}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <button
+                          onClick={() => setVendasCurrentPage((p) => Math.min(p + 1, totalVendasPages))}
+                          disabled={activeVendasPage === totalVendasPages}
+                          className="p-2 rounded border border-neutral-800 bg-neutral-900/50 hover:bg-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                        >
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1398,6 +1655,287 @@ export default function AdminPage() {
                         <button
                           onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
                           disabled={activePage === totalPages}
+                          className="p-2 rounded border border-neutral-800 bg-neutral-900/50 hover:bg-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                        >
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ABA: ESTACIONAMENTO (50 VAGAS) */}
+              {activeTab === "estacionamento" && (
+                <div className="space-y-6">
+                  {/* Busca e Filtros Avançados */}
+                  <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-5 rounded-lg bg-neutral-950 border border-neutral-900">
+                    <div className="space-y-1">
+                      <h3 className="font-display font-black text-sm uppercase tracking-wider text-white">
+                        Grade de Estacionamento (50 Vagas)
+                      </h3>
+                      <p className="text-[10px] sm:text-xs text-neutral-400">
+                        Gerencie a posse das vagas por CPF, valide check-in ou libere vagas.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full xl:max-w-3xl">
+                      <div className="flex flex-wrap gap-1.5">
+                        {([
+                          { id: "todos", label: "Todas" },
+                          { id: "com_dono", label: "Ocupadas" },
+                          { id: "sem_dono", label: "Livres" },
+                          { id: "validados", label: "Validadas" }
+                        ] as const).map((opt) => (
+                          <button
+                            key={opt.id}
+                            onClick={() => {
+                              setEstacionamentoFilter(opt.id);
+                              setEstacionamentoCurrentPage(1);
+                            }}
+                            className={`px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-wider cursor-pointer border ${
+                              estacionamentoFilter === opt.id
+                                ? "bg-primary text-black border-primary"
+                                : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-white"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" size={16} />
+                        <input
+                          type="text"
+                          placeholder="Buscar por Vaga, CPF ou Motorista..."
+                          value={estacionamentoSearch}
+                          onChange={(e) => {
+                            setEstacionamentoSearch(e.target.value);
+                            setEstacionamentoCurrentPage(1);
+                          }}
+                          className="w-full pl-10 pr-4 py-2 text-xs sm:text-sm premium-input"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Listagem de Estacionamento em Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {paginatedEstacionamento.length === 0 ? (
+                      <div className="col-span-full flat-card p-12 text-center text-neutral-500 font-bold rounded border border-neutral-800">
+                        Nenhuma vaga encontrada.
+                      </div>
+                    ) : (
+                      paginatedEstacionamento.map((t) => {
+                        const isMock = t.id === "0000";
+                        const isUsed = t.parkingUsed || (t.id.startsWith("vaga_") ? t.utilizado : false);
+                        const isOwnerless = t.status === "disponivel";
+                        const formattedId = isMock ? "#0000" : `#${t.displayId.replace("vaga_", "")}`;
+
+                        return (
+                          <div
+                            key={t.displayId}
+                            className={`flat-card p-5 rounded border flex flex-col justify-between gap-4 transition-all relative overflow-hidden ${
+                              isUsed
+                                ? "border-red-500/20 bg-red-950/5"
+                                : isOwnerless
+                                ? "border-neutral-800 bg-neutral-900/10 opacity-75 hover:opacity-100"
+                                : "border-emerald-500/15 bg-emerald-950/5 hover:border-emerald-500/30"
+                            }`}
+                          >
+                            <div className={`absolute left-0 top-0 bottom-0 w-1 ${
+                              isUsed ? "bg-red-500" : isOwnerless ? "bg-neutral-700" : "bg-emerald-500"
+                            }`} />
+
+                            <div className="space-y-3 pl-2">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <span className="text-[8px] text-neutral-500 font-black uppercase tracking-wider block">VAGA</span>
+                                  <span className="font-display font-black text-sm text-white tracking-wider">{formattedId}</span>
+                                </div>
+
+                                <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border ${
+                                  isUsed
+                                    ? "bg-red-950/20 border-red-500/20 text-red-400"
+                                    : isOwnerless
+                                    ? "bg-neutral-950/30 border-neutral-800 text-neutral-500"
+                                    : "bg-emerald-950/20 border-emerald-500/20 text-emerald-400"
+                                }`}>
+                                  {isUsed ? "Utilizada" : isOwnerless ? "Livre" : "Ocupada"}
+                                </span>
+                              </div>
+
+                              {!isOwnerless ? (
+                                <div className="space-y-1.5 text-xs">
+                                  <div>
+                                    <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider block">Motorista</span>
+                                    <span className="font-bold text-white uppercase">{t.nomeComprador}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider block">CPF</span>
+                                    <span className="text-neutral-400">{t.cpfComprador}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider block">Ticket Atrelado</span>
+                                    <span className="text-primary font-bold uppercase text-[10px]">{t.id.startsWith("ingresso_") ? `#${t.id.replace("ingresso_", "").slice(0, 5)}...` : "Vaga Avulsa"}</span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="space-y-2 py-1 text-xs">
+                                  <p className="text-neutral-500 italic text-[11px] leading-snug">
+                                    Vaga livre. Atribua um CPF para vender o estacionamento separadamente na portaria.
+                                  </p>
+
+                                  <div className="flex gap-1.5">
+                                    <input
+                                      type="text"
+                                      placeholder="CPF (apenas números)"
+                                      value={assignCpfInput[t.displayId] || ""}
+                                      onChange={(e) =>
+                                        setAssignCpfInput((prev) => ({
+                                          ...prev,
+                                          [t.displayId]: e.target.value,
+                                        }))
+                                      }
+                                      className="flex-1 py-1.5 px-2.5 text-[11px] premium-input"
+                                    />
+                                    <button
+                                      onClick={() => handleAssignTicket(t.displayId)}
+                                      disabled={assignLoading[t.displayId]}
+                                      className="py-1.5 px-3 rounded bg-primary text-black font-black text-[10px] uppercase flex items-center gap-1 cursor-pointer hover:bg-primary-hover disabled:opacity-50"
+                                      title="Dar posse da vaga"
+                                    >
+                                      {assignLoading[t.displayId] ? (
+                                        <Loader2 size={10} className="animate-spin" />
+                                      ) : (
+                                        <>
+                                          <UserPlus size={10} />
+                                          Dar
+                                        </>
+                                      )}
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="pt-3 border-t border-neutral-900 pl-2 flex flex-col gap-2">
+                              {!isOwnerless && (
+                                <div className="flex gap-2">
+                                  <div className="flex-1">
+                                    {isUsed ? (
+                                      <div className="space-y-0.5">
+                                        <div className="flex items-center gap-1.5 text-xs text-red-500 font-black uppercase tracking-wide">
+                                          <XCircle size={13} className="flex-shrink-0" />
+                                          Vaga Registrada
+                                        </div>
+                                        <p className="text-[9px] text-neutral-500">
+                                          Validado às {
+                                            (t.parkingCheckedInAt || t.checkedInAt)?.toDate ? (
+                                              (t.parkingCheckedInAt || t.checkedInAt).toDate().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+                                            ) : (t.parkingCheckedInAt || t.checkedInAt) instanceof Date ? (
+                                              (t.parkingCheckedInAt || t.checkedInAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+                                            ) : (
+                                              "Hoje"
+                                            )
+                                          }
+                                        </p>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        onClick={() => handleCheckInTicket(t.id, true)}
+                                        disabled={checkInLoading[t.id]}
+                                        className="w-full py-1.5 rounded bg-primary hover:bg-primary-hover text-black font-black text-[10px] uppercase flex items-center justify-center gap-1 cursor-pointer hover:scale-[1.01]"
+                                      >
+                                        {checkInLoading[t.id] ? (
+                                          <>
+                                            <Loader2 size={10} className="animate-spin" />
+                                            Validando...
+                                          </>
+                                        ) : isMock ? (
+                                          <>
+                                            Validar [INFINITO]
+                                            <Sparkles size={10} />
+                                          </>
+                                        ) : (
+                                          <>
+                                            Registrar Carro
+                                            <Car size={10} />
+                                          </>
+                                        )}
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  {!isMock && (
+                                    <button
+                                      onClick={() => handleRevokeTicket(t.id, true)}
+                                      disabled={revokeLoading[t.id]}
+                                      className="p-1.5 rounded border border-red-500/20 bg-red-950/10 text-red-500 hover:bg-red-500/20 cursor-pointer"
+                                      title="Retirar posse desta vaga"
+                                    >
+                                      {revokeLoading[t.id] ? (
+                                        <Loader2 size={12} className="animate-spin text-red-500" />
+                                      ) : (
+                                        <Trash2 size={12} />
+                                      )}
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {totalPagesEstacionamento > 1 && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-neutral-900 text-xs">
+                      <p className="text-neutral-500 font-bold uppercase tracking-wider">
+                        Exibindo de {((activeEstacionamentoPage - 1) * ITEMS_PER_PAGE) + 1} a {Math.min(activeEstacionamentoPage * ITEMS_PER_PAGE, totalFilteredEstacionamento)} de {totalFilteredEstacionamento} vagas encontradas
+                      </p>
+
+                      <div className="flex items-center space-x-1.5">
+                        <button
+                          onClick={() => setEstacionamentoCurrentPage((p) => Math.max(p - 1, 1))}
+                          disabled={activeEstacionamentoPage === 1}
+                          className="p-2 rounded border border-neutral-800 bg-neutral-900/50 hover:bg-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
+
+                        <div className="flex items-center space-x-1">
+                          {Array.from({ length: totalPagesEstacionamento }).map((_, index) => {
+                            const pIndex = index + 1;
+                            const isCurrent = pIndex === activeEstacionamentoPage;
+                            if (pIndex !== 1 && pIndex !== totalPagesEstacionamento && Math.abs(pIndex - activeEstacionamentoPage) > 2) {
+                              if (pIndex === 2 || pIndex === totalPagesEstacionamento - 1) {
+                                return <span key={pIndex} className="text-neutral-700 font-bold px-1 select-none">...</span>;
+                              }
+                              return null;
+                            }
+
+                            return (
+                              <button
+                                key={pIndex}
+                                onClick={() => setEstacionamentoCurrentPage(pIndex)}
+                                className={`px-3 py-1.5 rounded text-xs font-black select-none cursor-pointer ${
+                                  isCurrent
+                                    ? "bg-primary text-black"
+                                    : "bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white"
+                                }`}
+                              >
+                                {pIndex}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <button
+                          onClick={() => setEstacionamentoCurrentPage((p) => Math.min(p + 1, totalPagesEstacionamento))}
+                          disabled={activeEstacionamentoPage === totalPagesEstacionamento}
                           className="p-2 rounded border border-neutral-800 bg-neutral-900/50 hover:bg-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                         >
                           <ChevronRight size={16} />
@@ -1712,6 +2250,145 @@ export default function AdminPage() {
                       )}
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* ABA 5: USUÁRIOS */}
+              {activeTab === "usuarios" && (
+                <div className="space-y-6">
+                  {/* Busca e Filtros */}
+                  <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-5 rounded-lg bg-neutral-950 border border-neutral-900">
+                    <div className="space-y-1">
+                      <h3 className="font-display font-black text-sm uppercase tracking-wider text-white">
+                        Base de Usuários
+                      </h3>
+                      <p className="text-[10px] sm:text-xs text-neutral-400">
+                        Consulte e gerencie os usuários cadastrados na plataforma (CPF parcialmente oculto por segurança).
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full xl:max-w-xl">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" size={16} />
+                        <input
+                          type="text"
+                          placeholder="Buscar por Nome, Email ou CPF..."
+                          value={usuariosSearch}
+                          onChange={(e) => {
+                            setUsuariosSearch(e.target.value);
+                            setUsuariosCurrentPage(1);
+                          }}
+                          className="w-full pl-10 pr-4 py-2 text-xs sm:text-sm premium-input"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Listagem em Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {paginatedUsuarios.length === 0 ? (
+                      <div className="col-span-full flat-card p-12 text-center text-neutral-500 font-bold rounded border border-neutral-800">
+                        Nenhum usuário encontrado.
+                      </div>
+                    ) : (
+                      paginatedUsuarios.map((u) => (
+                        <div key={u.id} className="flat-card p-5 rounded border border-neutral-800 bg-neutral-950/50 flex flex-col gap-3 relative overflow-hidden group hover:border-neutral-700 transition-colors">
+                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />
+                          <div className="pl-2">
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <span className="text-[8px] text-neutral-500 font-black uppercase tracking-wider block">ID do Usuário</span>
+                                <span className="font-display font-black text-xs text-neutral-300 tracking-wider truncate block max-w-[150px]" title={u.id}>{u.id}</span>
+                              </div>
+                              {u.role === "admin" && (
+                                <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border bg-primary/10 border-primary/20 text-primary">
+                                  Admin
+                                </span>
+                              )}
+                            </div>
+                            <div className="space-y-1.5 text-xs">
+                              <div>
+                                <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider block">Nome</span>
+                                <span className="font-bold text-white uppercase">{u.nome || "Não informado"}</span>
+                              </div>
+                              <div>
+                                <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider block">Email</span>
+                                <span className="text-neutral-400">{u.email}</span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-neutral-900/50">
+                                <div>
+                                  <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider block">CPF</span>
+                                  <span className="text-neutral-400 font-mono">{maskCpf(u.cpf)}</span>
+                                </div>
+                                <div>
+                                  <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider block">Nascimento</span>
+                                  <span className="text-neutral-400">{u.dataNascimento || "---"}</span>
+                                </div>
+                              </div>
+                              <div className="pt-2">
+                                <span className="text-[8px] text-neutral-500 font-bold uppercase tracking-wider block">Telefone</span>
+                                <span className="text-neutral-400">{u.telefone || "---"}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Paginação */}
+                  {totalPagesUsuarios > 1 && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-neutral-900 text-xs">
+                      <p className="text-neutral-500 font-bold uppercase tracking-wider">
+                        Exibindo de {((activeUsuariosPage - 1) * ITEMS_PER_PAGE) + 1} a {Math.min(activeUsuariosPage * ITEMS_PER_PAGE, totalFilteredUsuarios)} de {totalFilteredUsuarios} usuários encontrados
+                      </p>
+
+                      <div className="flex items-center space-x-1.5">
+                        <button
+                          onClick={() => setUsuariosCurrentPage((p) => Math.max(p - 1, 1))}
+                          disabled={activeUsuariosPage === 1}
+                          className="p-2 rounded border border-neutral-800 bg-neutral-900/50 hover:bg-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
+
+                        <div className="flex items-center space-x-1">
+                          {Array.from({ length: totalPagesUsuarios }).map((_, index) => {
+                            const pIndex = index + 1;
+                            const isCurrent = pIndex === activeUsuariosPage;
+                            if (pIndex !== 1 && pIndex !== totalPagesUsuarios && Math.abs(pIndex - activeUsuariosPage) > 2) {
+                              if (pIndex === 2 || pIndex === totalPagesUsuarios - 1) {
+                                return <span key={pIndex} className="text-neutral-700 font-bold px-1 select-none">...</span>;
+                              }
+                              return null;
+                            }
+
+                            return (
+                              <button
+                                key={pIndex}
+                                onClick={() => setUsuariosCurrentPage(pIndex)}
+                                className={`px-3 py-1.5 rounded text-xs font-black select-none cursor-pointer ${
+                                  isCurrent
+                                    ? "bg-primary text-black"
+                                    : "bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white"
+                                }`}
+                              >
+                                {pIndex}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <button
+                          onClick={() => setUsuariosCurrentPage((p) => Math.min(p + 1, totalPagesUsuarios))}
+                          disabled={activeUsuariosPage === totalPagesUsuarios}
+                          className="p-2 rounded border border-neutral-800 bg-neutral-900/50 hover:bg-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                        >
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </motion.div>

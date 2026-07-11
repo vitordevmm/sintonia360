@@ -60,9 +60,9 @@ export async function GET(request: Request) {
       if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) {
         age--;
       }
-      isMinor = age < 16;
+      isMinor = age < 18;
     } else if (age !== null) {
-      isMinor = age < 16;
+      isMinor = age < 18;
     }
 
     return NextResponse.json({
