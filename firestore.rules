@@ -60,5 +60,11 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
+
+    // Regras para Coleção de Configurações
+    match /configuracoes/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
   }
 }

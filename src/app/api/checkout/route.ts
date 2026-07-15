@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminDb, adminAuth } from "@/lib/firebase-admin";
 
-const LOTES_OFICIAIS = {
-  "lote-1": { nome: "1º Lote - Individual", valor: 40.0, maxVendas: 150 },
-  "lote-2": { nome: "2º Lote - Individual", valor: 45.0, maxVendas: null },
-};
+// Removes the hardcoded LOTES_OFICIAIS to fetch from Firestore instead.
 
 export async function POST(request: Request) {
   try {
@@ -34,7 +31,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Tentativa de compra para outro usuário não permitida." }, { status: 403 });
     }
 
-    const loteData = LOTES_OFICIAIS[loteId as keyof typeof LOTES_OFICIAIS];
+    // Dynamic Config Fetch
+    const configDoc = await adminDb.collection("configuracoes").doc("geral").get();
+    const appConfig = configDoc.exists ? configDoc.data() : null;
+    
+    // Fallback if not configured
+    const lotesConfig = appConfig?.lotes || [
+      { id: "lote-1", nome: "1º Lote - Individual", valor: 40.0, maxVendas: 150 },
+      { id: "lote-2", nome: "2º Lote - Individual", valor: 45.0, maxVendas: null },
+    ];
+    const parkingTotalSpots = appConfig?.parkingSpots || 50;
+    const parkingPrice = appConfig?.parkingPrice || 25.00;
+
+    const loteData = lotesConfig.find((l: any) => l.id === loteId);
     if (!loteData) {
       return NextResponse.json({ error: "Lote inválido ou esgotado." }, { status: 400 });
     }
@@ -52,8 +61,8 @@ export async function POST(request: Request) {
     const loteNome = loteData.nome;
     const valor = loteData.valor;
 
-    // Verificação de Limite Automática para Lote 1
-    if (loteData.maxVendas !== null) {
+    // Verificação de Limite Automática para Lote
+    if (loteData.maxVendas !== null && typeof loteData.maxVendas !== "undefined") {
       const vendidosSnapshot = await adminDb.collection("ingressos")
         .where("loteId", "==", loteId)
         .where("status", "==", "aprovado")
@@ -66,7 +75,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // Verificação de Limite de Estacionamento (50 vagas)
+    // Verificação de Limite de Estacionamento Dinâmico
     if (includeParking) {
       const estacionamentoVendido = await adminDb.collection("ingressos")
         .where("includeParking", "==", true)
@@ -75,7 +84,7 @@ export async function POST(request: Request) {
         .get();
       
       const vagasVendidas = estacionamentoVendido.data().count;
-      if (vagasVendidas >= 50) {
+      if (vagasVendidas >= parkingTotalSpots) {
         return NextResponse.json({ error: "As vagas de estacionamento estão esgotadas! Por favor, desmarque a opção para continuar com a compra do ingresso." }, { status: 400 });
       }
     }
@@ -115,7 +124,7 @@ export async function POST(request: Request) {
           },
           ...(includeParking ? [{
             quantity: 1,
-            price: 2500, // R$ 25,00 em centavos
+            price: Math.round(Number(parkingPrice) * 100), // Configurable parking price
             description: "Ticket Estacionamento (1 Vaga de Carro)",
             name: "Estacionamento",
           }] : [])
@@ -141,7 +150,7 @@ export async function POST(request: Request) {
       cpfComprador: userCpf,
       lote: loteNome,
       loteId: loteId,
-      valor: includeParking ? Number(valor) + 25 : Number(valor),
+      valor: includeParking ? Number(valor) + Number(parkingPrice) : Number(valor),
       includeParking: Boolean(includeParking),
       parkingUsed: false,
       parkingQrCodeData: includeParking ? `sintonia360_parking_${purchaseId}_${userId}` : null,

@@ -54,6 +54,7 @@ export default function ProfilePage() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [tickets, setTickets] = useState<TicketData[]>([]);
+  const [appConfig, setAppConfig] = useState<any>(null);
 
   // Edição de Telefone
   const [isEditingPhone, setIsEditingPhone] = useState(false);
@@ -191,6 +192,15 @@ export default function ProfilePage() {
 
         setProfile(profileData);
 
+        try {
+          const configDoc = await getDoc(doc(db, "configuracoes", "geral"));
+          if (configDoc.exists()) {
+            setAppConfig(configDoc.data());
+          }
+        } catch (err) {
+          console.error("Erro ao buscar configurações globais:", err);
+        }
+
         const ticketsQuery = query(
           collection(db, "ingressos"),
           where("uid", "==", currentUser.uid),
@@ -199,12 +209,35 @@ export default function ProfilePage() {
         let fetchedTickets: TicketData[] = [];
         try {
           const querySnapshot = await getDocs(ticketsQuery);
-          querySnapshot.forEach((doc) => {
-            fetchedTickets.push({
-              id: doc.id,
-              ...doc.data(),
-            } as TicketData);
-          });
+          const { deleteDoc } = await import("firebase/firestore");
+          
+          for (const docSnap of querySnapshot.docs) {
+            const data = docSnap.data();
+            const ticket = {
+              id: docSnap.id,
+              ...data,
+            } as TicketData;
+            
+            // Verifica se expirou (24h)
+            let isExpired = false;
+            if (ticket.status === "pendente" && ticket.createdAt) {
+              let createdTime = 0;
+              if (ticket.createdAt.toMillis) createdTime = ticket.createdAt.toMillis();
+              else if (ticket.createdAt.seconds) createdTime = ticket.createdAt.seconds * 1000;
+              else createdTime = new Date(ticket.createdAt).getTime();
+              
+              if (Date.now() - createdTime > 24 * 60 * 60 * 1000) {
+                isExpired = true;
+              }
+            }
+
+            if (isExpired && ticket.id !== "0000") {
+              // Delete expired ticket from Firestore to free it up
+              await deleteDoc(doc(db, "ingressos", ticket.id)).catch(console.error);
+            } else {
+              fetchedTickets.push(ticket);
+            }
+          }
         } catch (err) {
           console.error("Erro ao buscar ingressos do Firestore:", err);
         }
@@ -489,7 +522,7 @@ export default function ProfilePage() {
             transition={{ duration: 0.6, delay: 0.2, ease: "easeOut" }}
             className="lg:col-span-2 space-y-6"
           >
-            {profile?.dataNascimento && calculateAge(profile.dataNascimento) < 18 && (
+            {profile?.dataNascimento && appConfig?.ageAuthorization?.enabled && calculateAge(profile.dataNascimento) < (appConfig.ageAuthorization.minAge || 18) && (
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -504,7 +537,7 @@ export default function ProfilePage() {
                       Autorização Obrigatória para Menores
                     </h3>
                     <p className="text-xs text-neutral-300 font-medium leading-relaxed max-w-xl">
-                      Você tem <strong className="text-white font-bold">{calculateAge(profile.dataNascimento)} anos</strong>. Por ser menor de 18 anos, de acordo com as diretrizes do evento, você **deve** gerar e apresentar a Autorização para Menores de 18 anos assinada por um responsável legal na entrada do festival.
+                      Você tem <strong className="text-white font-bold">{calculateAge(profile.dataNascimento)} anos</strong>. Por ser menor de {appConfig?.ageAuthorization?.minAge || 18} anos, de acordo com as diretrizes do evento, você **deve** gerar e apresentar a Autorização para Menores assinada por um responsável legal na entrada do festival.
                     </p>
                   </div>
                 </div>

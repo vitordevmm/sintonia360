@@ -50,11 +50,16 @@ export default function Home() {
     }
   ]);
 
+  const [parkingPrice, setParkingPrice] = useState(25.0);
+
   useEffect(() => {
     fetch("/api/lotes")
       .then(res => res.json())
       .then(data => {
-        if (!data.error) setLotes(data);
+        if (!data.error) {
+          setLotes(data.lotes || data); // Falback to data directly if needed
+          if (data.parkingPrice) setParkingPrice(data.parkingPrice);
+        }
       })
       .catch(console.error);
   }, []);
@@ -538,7 +543,7 @@ export default function Home() {
               </div>
               <div className="flex flex-col">
                 <span className="text-sm font-black text-white tracking-wider uppercase">Incluir Estacionamento</span>
-                <span className="text-xs text-primary font-bold">+ R$ 25,00 (1 Vaga)</span>
+                <span className="text-xs text-primary font-bold">+ R$ {parkingPrice.toFixed(2).replace(".", ",")} (1 Vaga)</span>
               </div>
             </div>
 

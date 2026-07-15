@@ -20,8 +20,32 @@ const LOTES_OFICIAIS = [
 
 export async function GET() {
   try {
-    const lotesData = await Promise.all(LOTES_OFICIAIS.map(async (lote) => {
-      if (lote.maxVendas !== null) {
+    // Fetch configuration from Firestore
+    const configDoc = await adminDb.collection("configuracoes").doc("geral").get();
+    let lotesConfig = configDoc.exists ? configDoc.data()?.lotes : null;
+
+    // Fallback default lotes if not configured yet
+    if (!lotesConfig) {
+      lotesConfig = [
+        {
+          id: "lote-1",
+          nome: "1º Lote - Individual",
+          valor: 40.0,
+          descricao: "Ingresso individual com acesso total ao evento.",
+          maxVendas: 150,
+        },
+        {
+          id: "lote-2",
+          nome: "2º Lote - Individual",
+          valor: 45.0,
+          descricao: "Ingresso individual com acesso total ao evento.",
+          maxVendas: null,
+        }
+      ];
+    }
+
+    const lotesData = await Promise.all(lotesConfig.map(async (lote: any) => {
+      if (lote.maxVendas !== null && typeof lote.maxVendas !== "undefined") {
         const vendidosSnapshot = await adminDb.collection("ingressos")
           .where("loteId", "==", lote.id)
           .where("status", "==", "aprovado")
@@ -49,20 +73,30 @@ export async function GET() {
       };
     }));
 
-    const lote1 = lotesData.find(l => l.id === "lote-1");
-    const lote2 = lotesData.find(l => l.id === "lote-2");
-    
-    if (lote2) {
-      if (lote1 && lote1.esgotado) {
-        lote2.status = "ativo";
-        lote2.badges = ["Disponível"];
+    // Find first active or next waiting lote to manage status
+    let foundActive = false;
+    for (let i = 0; i < lotesData.length; i++) {
+      if (lotesData[i].esgotado) {
+        // If exhausted, keep as esgotado
+        continue;
+      }
+      
+      if (!foundActive) {
+        // First non-exhausted lote becomes active
+        lotesData[i].status = "ativo";
+        lotesData[i].badges = ["Disponível"];
+        foundActive = true;
       } else {
-        lote2.status = "aguardando";
-        lote2.badges = ["Aguardando"];
+        // Subsequent non-exhausted lotes remain aguardando
+        lotesData[i].status = "aguardando";
+        lotesData[i].badges = ["Aguardando"];
       }
     }
 
-    return NextResponse.json(lotesData);
+    return NextResponse.json({
+      lotes: lotesData,
+      parkingPrice: configDoc.exists ? configDoc.data()?.parkingPrice || 25.0 : 25.0
+    });
   } catch (error) {
     console.error("Erro ao buscar lotes:", error);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });

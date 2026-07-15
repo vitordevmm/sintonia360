@@ -46,7 +46,8 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronUp,
-  Car
+  Car,
+  Settings
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { motion, AnimatePresence } from "framer-motion";
@@ -57,6 +58,23 @@ interface Metrics {
   totalUsuarios: number;
   totalEstacionamento: number;
   vendasPorLote: { [key: string]: number };
+}
+
+interface ConfiguracaoGlobal {
+  totalTickets: number;
+  parkingSpots: number;
+  parkingPrice: number;
+  lotes: {
+    id: string;
+    nome: string;
+    valor: number;
+    maxVendas: number | null;
+    descricao?: string;
+  }[];
+  ageAuthorization?: {
+    enabled: boolean;
+    minAge: number;
+  };
 }
 
 interface Sorteio {
@@ -101,7 +119,8 @@ const TABS = [
 type TabId = typeof TABS[number]["id"];
 
 const ITEMS_PER_PAGE = 30;
-const TOTAL_TICKETS = 1050;
+// We'll use a dynamic value from appConfig instead of TOTAL_TICKETS
+// const TOTAL_TICKETS = 1050;
 
 const formatCPF = (cpf: string) => {
   const clean = cpf.replace(/\D/g, "");
@@ -127,6 +146,7 @@ export default function AdminPage() {
     totalEstacionamento: 0,
     vendasPorLote: {},
   });
+  const [appConfig, setAppConfig] = useState<ConfiguracaoGlobal | null>(null);
   const [sorteios, setSorteios] = useState<Sorteio[]>([]);
   const [vendas, setVendas] = useState<Venda[]>([]);
   const [usuariosList, setUsuariosList] = useState<any[]>([]);
@@ -141,6 +161,38 @@ export default function AdminPage() {
     setExpandedVendasGroups(prev => 
       prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
     );
+  };
+
+  // Settings Modal State
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [editingConfig, setEditingConfig] = useState<ConfiguracaoGlobal | null>(null);
+
+  const openSettingsModal = () => {
+    if (appConfig) {
+      // Clona profundamente para edição
+      const config = JSON.parse(JSON.stringify(appConfig));
+      if (!config.ageAuthorization) {
+        config.ageAuthorization = { enabled: false, minAge: 18 };
+      }
+      setEditingConfig(config);
+    }
+    setIsSettingsModalOpen(true);
+  };
+
+  const handleSaveSettings = async () => {
+    if (!editingConfig) return;
+    setSettingsLoading(true);
+    try {
+      await setDoc(doc(db, "configuracoes", "geral"), editingConfig);
+      showToast("Configurações atualizadas com sucesso!", "success");
+      setIsSettingsModalOpen(false);
+    } catch (error) {
+      console.error("Erro ao salvar configurações:", error);
+      showToast("Falha ao salvar as configurações no Firestore.", "error");
+    } finally {
+      setSettingsLoading(false);
+    }
   };
 
   // Ingressos Portaria Search, Filters, Assignment, Pagination States
@@ -239,17 +291,62 @@ export default function AdminPage() {
 
   // Escutas em tempo real das coleções
   const setupRealtimeListeners = () => {
+    // 0. Ouvir Configurações Globais
+    const unsubConfig = onSnapshot(
+      doc(db, "configuracoes", "geral"),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          setAppConfig(docSnap.data() as ConfiguracaoGlobal);
+        } else {
+          // Valores padrão caso não exista
+          setAppConfig({
+            totalTickets: 1050,
+            parkingSpots: 50,
+            parkingPrice: 25.0,
+            lotes: [
+              { id: "lote-1", nome: "1º Lote - Individual", valor: 40.0, maxVendas: 150 },
+              { id: "lote-2", nome: "2º Lote - Individual", valor: 45.0, maxVendas: null },
+            ],
+            ageAuthorization: {
+              enabled: false,
+              minAge: 18,
+            }
+          });
+        }
+      },
+      (error) => console.error("Erro ao escutar configurações:", error)
+    );
+
     // 1. Ouvir Ingressos
     const qVendas = query(collection(db, "ingressos"), orderBy("createdAt", "desc"));
     const unsubVendas = onSnapshot(
       qVendas,
       (snapshot) => {
         const fetchedVendas: Venda[] = [];
-        snapshot.forEach((doc) => {
-          fetchedVendas.push({
-            id: doc.id,
-            ...doc.data(),
-          } as Venda);
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          const ticket = {
+            id: docSnap.id,
+            ...data,
+          } as Venda;
+
+          let isExpired = false;
+          if (ticket.status === "pendente" && ticket.createdAt) {
+            let createdTime = 0;
+            if (ticket.createdAt.toMillis) createdTime = ticket.createdAt.toMillis();
+            else if (ticket.createdAt.seconds) createdTime = ticket.createdAt.seconds * 1000;
+            else createdTime = new Date(ticket.createdAt).getTime();
+            
+            if (Date.now() - createdTime > 24 * 60 * 60 * 1000) {
+              isExpired = true;
+            }
+          }
+
+          if (isExpired && ticket.id !== "0000") {
+             deleteDoc(doc(db, "ingressos", ticket.id)).catch(console.error);
+          } else {
+             fetchedVendas.push(ticket);
+          }
         });
         setVendas(fetchedVendas);
 
@@ -319,6 +416,7 @@ export default function AdminPage() {
     );
 
     return () => {
+      unsubConfig();
       unsubVendas();
       unsubSorteios();
       unsubUsuarios();
@@ -558,12 +656,13 @@ export default function AdminPage() {
   };
 
 
-  // GERAÇÃO E ESTRUTURA DOS 1050 INGRESSOS OFICIAIS + INGRESSO #0000
-  const build1050TicketsGrid = () => {
+  // GERAÇÃO E ESTRUTURA DOS INGRESSOS OFICIAIS + INGRESSO #0000
+  const buildTicketsGrid = () => {
     const list: Venda[] = [];
+    const maxTickets = appConfig?.totalTickets || 1050;
 
-    // Preencher do ingresso_0001 ao ingresso_1050
-    for (let i = 1; i <= TOTAL_TICKETS; i++) {
+    // Preencher do ingresso_0001 ao limite
+    for (let i = 1; i <= maxTickets; i++) {
       const paddedId = String(i).padStart(4, "0");
       const docId = `ingresso_${paddedId}`;
 
@@ -605,10 +704,10 @@ export default function AdminPage() {
     return list;
   };
 
-  // GERAÇÃO E ESTRUTURA DAS 50 VAGAS DE ESTACIONAMENTO
-  const build50ParkingGrid = () => {
+  // GERAÇÃO E ESTRUTURA DAS VAGAS DE ESTACIONAMENTO
+  const buildParkingGrid = () => {
     const list: any[] = [];
-    const TOTAL_PARKING = 50;
+    const TOTAL_PARKING = appConfig?.parkingSpots || 50;
     
     // Pegar todas as vendas com estacionamento
     const parkingTickets = vendas.filter(v => v.includeParking);
@@ -763,10 +862,10 @@ export default function AdminPage() {
     activeVendasPage * ITEMS_PER_PAGE
   );
 
-  // Lógica de Busca e Filtro para Aba INGRESSOS (1050 ingressos)
-  const allGeneratedIngressos = build1050TicketsGrid();
+  // Lógica de Busca e Filtro para Aba INGRESSOS
+  const allGeneratedTickets = buildTicketsGrid();
 
-  const filteredIngressos = allGeneratedIngressos.filter((t) => {
+  const filteredIngressos = allGeneratedTickets.filter((t) => {
     // 1. Busca textual
     const term = ingressosSearch.toLowerCase();
     const cleanCpf = t.cpfComprador.replace(/\D/g, "");
@@ -803,8 +902,8 @@ export default function AdminPage() {
     activePage * ITEMS_PER_PAGE
   );
 
-  // Lógica de Busca e Filtro para Aba ESTACIONAMENTO (50 vagas)
-  const allGeneratedEstacionamento = build50ParkingGrid();
+  // Lógica de Busca e Filtro para Aba ESTACIONAMENTO
+  const allGeneratedEstacionamento = buildParkingGrid();
 
   const filteredEstacionamento = allGeneratedEstacionamento.filter((t) => {
     const term = estacionamentoSearch.toLowerCase();
@@ -935,7 +1034,14 @@ export default function AdminPage() {
               Gestão financeira, auditoria de portaria via check-in seguro e controle de promoções em tempo real.
             </p>
           </div>
-
+          
+          <button
+            onClick={openSettingsModal}
+            className="flex items-center gap-2 bg-neutral-900 border border-neutral-800 hover:border-primary/50 text-white px-4 py-2.5 rounded-md text-xs font-black uppercase tracking-wider transition-colors shadow-lg self-start md:self-auto"
+          >
+            <Settings size={16} className="text-primary" />
+            <span>Ajustar Configs</span>
+          </button>
         </div>
 
         {/* ---------------- SLIDING TAB NAVIGATION MENU ---------------- */}
@@ -1045,7 +1151,7 @@ export default function AdminPage() {
                       <div className="space-y-1.5">
                         <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider group-hover:text-white transition-colors">Estacionamento</p>
                         <h3 className="font-display font-black text-3xl text-white tracking-tighter">
-                          {metrics.totalEstacionamento} <span className="text-sm text-neutral-500">/ 50</span>
+                          {metrics.totalEstacionamento} <span className="text-sm text-neutral-500">/ {appConfig?.parkingSpots || 50}</span>
                         </h3>
                         <p className="text-[9px] text-neutral-500 uppercase font-bold">Vagas Vendidas</p>
                       </div>
@@ -1062,7 +1168,7 @@ export default function AdminPage() {
                           Status de Vendas por Lote
                         </h3>
                         <p className="text-xs text-neutral-400 mt-1">
-                          Percentual de ingressos vendidos em relação à meta padrão de 100 por lote.
+                          Percentual de ingressos vendidos em relação à meta definida no sistema por lote.
                         </p>
                       </div>
 
@@ -1071,13 +1177,17 @@ export default function AdminPage() {
                           <p className="text-xs text-neutral-500 font-bold py-4">Nenhum lote com vendas aprovadas ainda.</p>
                         ) : (
                           Object.entries(metrics.vendasPorLote).map(([loteName, count]) => {
-                            const target = 100;
+                            const configLote = appConfig?.lotes?.find((l: any) => l.nome === loteName);
+                            // If maxVendas is null (unlimited) or not found, we use a fallback to just show the count or 100% full
+                            const target = configLote && configLote.maxVendas !== null ? configLote.maxVendas : count || 1;
                             const percentage = Math.min((count / target) * 100, 100);
+                            const isUnlimited = configLote?.maxVendas === null;
+
                             return (
                               <div key={loteName} className="space-y-2">
                                 <div className="flex justify-between text-xs font-bold uppercase">
                                   <span className="text-neutral-300 truncate max-w-[250px]">{loteName}</span>
-                                  <span className="text-primary">{count} / {target} vendidos ({percentage.toFixed(0)}%)</span>
+                                  <span className="text-primary">{count} {isUnlimited ? "vendidos" : `/ ${target} vendidos`} ({percentage.toFixed(0)}%)</span>
                                 </div>
                                 <div className="w-full bg-neutral-900 h-3 rounded-full overflow-hidden border border-neutral-800/80">
                                   <motion.div
@@ -1110,22 +1220,24 @@ export default function AdminPage() {
                           const heightStyle = day.value > 0 ? `${Math.max(percentHeight, 8)}%` : "4px";
 
                           return (
-                            <div key={idx} className="flex flex-col items-center gap-2 w-full">
-                              <div
-                                style={{ height: heightStyle }}
-                                className={`w-6 sm:w-8 rounded-t relative group cursor-pointer transition-all duration-500 border ${
-                                  day.isToday
-                                    ? "bg-primary border-primary shadow-[0_0_15px_rgba(245,245,0,0.3)]"
-                                    : day.value > 0
-                                    ? "bg-primary/80 border-primary/40 hover:bg-primary"
-                                    : "bg-neutral-900 border-neutral-800 hover:border-neutral-700"
-                                }`}
-                              >
-                                {/* Premium Tooltip */}
-                                <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-neutral-900 border border-neutral-800 px-2 py-1 rounded shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 whitespace-nowrap">
-                                  <p className="text-[9px] font-black text-white uppercase tracking-wider">
-                                    {day.value > 0 ? `R$ ${day.value.toFixed(2)}` : "Sem Vendas"}
-                                  </p>
+                            <div key={idx} className="flex flex-col items-center w-full h-full">
+                              <div className="flex-1 w-full flex items-end justify-center pb-2">
+                                <div
+                                  style={{ height: heightStyle }}
+                                  className={`w-6 sm:w-8 rounded-t relative group cursor-pointer transition-all duration-500 border ${
+                                    day.isToday
+                                      ? "bg-primary border-primary shadow-[0_0_15px_rgba(245,245,0,0.3)]"
+                                      : day.value > 0
+                                      ? "bg-primary/80 border-primary/40 hover:bg-primary"
+                                      : "bg-neutral-900 border-neutral-800 hover:border-neutral-700"
+                                  }`}
+                                >
+                                  {/* Premium Tooltip */}
+                                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-neutral-900 border border-neutral-800 px-2 py-1 rounded shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 whitespace-nowrap">
+                                    <p className="text-[9px] font-black text-white uppercase tracking-wider">
+                                      {day.value > 0 ? `R$ ${day.value.toFixed(2)}` : "Sem Vendas"}
+                                    </p>
+                                  </div>
                                 </div>
                               </div>
                               <span className={`text-[10px] font-black uppercase tracking-wider ${
@@ -1380,7 +1492,7 @@ export default function AdminPage() {
                   <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-5 rounded-lg bg-neutral-950 border border-neutral-900">
                     <div className="space-y-1">
                       <h3 className="font-display font-black text-sm uppercase tracking-wider text-white">
-                        Grade Geral do Evento ({TOTAL_TICKETS} Ingressos Máximos)
+                        Grade Geral do Evento ({appConfig?.totalTickets || 1050} Ingressos Máximos)
                       </h3>
                       <p className="text-[10px] sm:text-xs text-neutral-400">
                         Gerencie a posse dos ingressos por CPF cadastrado, valide check-in ou libere vagas de volta para a venda.
@@ -2397,6 +2509,167 @@ export default function AdminPage() {
       </main>
 
       <Footer />
+
+      {/* ---------------- SETTINGS MODAL ---------------- */}
+      <AnimatePresence>
+        {isSettingsModalOpen && editingConfig && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-neutral-950 border border-neutral-800 rounded-lg shadow-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-display font-black uppercase tracking-tight text-white">
+                  Ajustes <span className="text-primary">Globais</span>
+                </h2>
+                <button
+                  onClick={() => setIsSettingsModalOpen(false)}
+                  className="text-neutral-500 hover:text-white"
+                >
+                  <XCircle size={24} />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-neutral-400 uppercase">Total de Ingressos (Sistema)</label>
+                    <input
+                      type="number"
+                      value={editingConfig.totalTickets}
+                      onChange={(e) => setEditingConfig({ ...editingConfig, totalTickets: Number(e.target.value) })}
+                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-neutral-400 uppercase">Vagas de Estacionamento</label>
+                    <input
+                      type="number"
+                      value={editingConfig.parkingSpots}
+                      onChange={(e) => setEditingConfig({ ...editingConfig, parkingSpots: Number(e.target.value) })}
+                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-neutral-400 uppercase">Preço Estacionamento (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editingConfig.parkingPrice}
+                      onChange={(e) => setEditingConfig({ ...editingConfig, parkingPrice: Number(e.target.value) })}
+                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                    />
+                  </div>
+                </div>
+                
+                <div className="border-t border-neutral-900 pt-6 space-y-4">
+                  <h3 className="text-sm font-bold text-neutral-300 uppercase">Autorização por Idade</h3>
+                  <div className="p-4 bg-neutral-900/50 border border-neutral-800 rounded space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-neutral-400 uppercase">Sistema Ativado</span>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="sr-only peer"
+                          checked={editingConfig.ageAuthorization?.enabled || false}
+                          onChange={(e) =>
+                            setEditingConfig({
+                              ...editingConfig,
+                              ageAuthorization: {
+                                ...(editingConfig.ageAuthorization || { minAge: 18 }),
+                                enabled: e.target.checked,
+                              },
+                            })
+                          }
+                        />
+                        <div className="w-11 h-6 bg-neutral-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                      </label>
+                    </div>
+                    {editingConfig.ageAuthorization?.enabled && (
+                      <div className="space-y-2 pt-2 border-t border-neutral-800">
+                        <label className="text-xs font-bold text-neutral-400 uppercase">A partir de que idade deve pedir autorização?</label>
+                        <input
+                          type="number"
+                          value={editingConfig.ageAuthorization?.minAge || 18}
+                          onChange={(e) =>
+                            setEditingConfig({
+                              ...editingConfig,
+                              ageAuthorization: {
+                                ...(editingConfig.ageAuthorization || { enabled: true }),
+                                minAge: Number(e.target.value),
+                              },
+                            })
+                          }
+                          className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="border-t border-neutral-900 pt-6 space-y-4">
+                  <h3 className="text-sm font-bold text-neutral-300 uppercase">Configuração de Lotes</h3>
+                  {editingConfig.lotes.map((lote, index) => (
+                    <div key={lote.id} className="p-4 bg-neutral-900/50 border border-neutral-800 rounded space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-primary">{lote.nome}</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-neutral-400 uppercase">Valor (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={lote.valor}
+                            onChange={(e) => {
+                              const newLotes = [...editingConfig.lotes];
+                              newLotes[index].valor = Number(e.target.value);
+                              setEditingConfig({ ...editingConfig, lotes: newLotes });
+                            }}
+                            className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-neutral-400 uppercase">Máx. Vendas (Vazio = Ilimitado)</label>
+                          <input
+                            type="number"
+                            value={lote.maxVendas || ""}
+                            onChange={(e) => {
+                              const newLotes = [...editingConfig.lotes];
+                              newLotes[index].maxVendas = e.target.value ? Number(e.target.value) : null;
+                              setEditingConfig({ ...editingConfig, lotes: newLotes });
+                            }}
+                            className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-sm text-white focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                            placeholder="Ilimitado"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex justify-end gap-3 pt-6">
+                  <button
+                    onClick={() => setIsSettingsModalOpen(false)}
+                    className="px-4 py-2 rounded text-sm font-bold text-neutral-400 hover:text-white"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleSaveSettings}
+                    disabled={settingsLoading}
+                    className="px-4 py-2 bg-primary text-black rounded text-sm font-black uppercase hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                  >
+                    {settingsLoading ? "Salvando..." : "Salvar Alterações"}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* ---------------- FLOATING PREMIUM TOAST SYSTEM ---------------- */}
       <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-2.5 max-w-sm w-full pointer-events-none">
