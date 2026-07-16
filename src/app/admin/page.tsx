@@ -1220,50 +1220,76 @@ export default function AdminPage() {
                       </div>
                     </div>
 
-                    <div className="flat-card p-6 rounded border border-neutral-800 space-y-6">
-                      <div>
-                        <h3 className="font-display font-black text-lg uppercase tracking-tight text-white flex items-center gap-2">
+                    <div className="flat-card p-4 sm:p-6 rounded-xl border border-neutral-800 space-y-6 relative overflow-hidden group">
+                      {/* Background Subtle Gradient */}
+                      <div className="absolute inset-0 bg-gradient-to-b from-neutral-900/0 via-neutral-900/0 to-primary/5 pointer-events-none transition-opacity duration-700 opacity-50 group-hover:opacity-100" />
+
+                      <div className="relative z-10">
+                        <h3 className="font-display font-black text-lg sm:text-xl uppercase tracking-tight text-white flex items-center gap-2">
                           Desempenho Semanal
                         </h3>
-                        <p className="text-xs text-neutral-400 mt-1">
-                          Faturamento real de vendas nos últimos 7 dias baseado em transações aprovadas do Mercado Pago.
+                        <p className="text-[10px] sm:text-xs text-neutral-400 mt-1 max-w-sm">
+                          Faturamento real de vendas nos últimos 7 dias baseado em transações aprovadas.
                         </p>
                       </div>
 
-                      <div className="flex justify-between items-end h-40 pt-4 border-b border-neutral-900 px-2">
-                        {weeklyData.days.map((day, idx) => {
-                          const percentHeight = (day.value / weeklyData.maxValue) * 100;
-                          const heightStyle = day.value > 0 ? `${Math.max(percentHeight, 8)}%` : "4px";
-
-                          return (
-                            <div key={idx} className="flex flex-col items-center w-full h-full">
-                              <div className="flex-1 w-full flex items-end justify-center pb-2">
-                                <div
-                                  style={{ height: heightStyle }}
-                                  className={`w-6 sm:w-8 rounded-t relative group cursor-pointer transition-all duration-500 border ${
-                                    day.isToday
-                                      ? "bg-primary border-primary shadow-[0_0_15px_rgba(245,245,0,0.3)]"
-                                      : day.value > 0
-                                      ? "bg-primary/80 border-primary/40 hover:bg-primary"
-                                      : "bg-neutral-900 border-neutral-800 hover:border-neutral-700"
-                                  }`}
-                                >
-                                  {/* Premium Tooltip */}
-                                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-neutral-900 border border-neutral-800 px-2 py-1 rounded shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 whitespace-nowrap">
-                                    <p className="text-[9px] font-black text-white uppercase tracking-wider">
-                                      {day.value > 0 ? `R$ ${day.value.toFixed(2)}` : "Sem Vendas"}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-                              <span className={`text-[10px] font-black uppercase tracking-wider ${
-                                day.isToday ? "text-primary" : "text-neutral-500"
-                              }`}>
-                                {day.label}
-                              </span>
+                      <div className="relative h-48 sm:h-56 mt-6 z-10">
+                        {/* Y-Axis Grid Lines */}
+                        <div className="absolute inset-0 flex flex-col justify-between pb-8 pointer-events-none">
+                          {[...Array(4)].map((_, i) => (
+                            <div key={i} className="w-full border-b border-neutral-800/30 flex-1 relative">
+                               {i === 0 && <span className="absolute -top-3 left-0 text-[8px] text-neutral-600 font-bold tracking-widest">MAX</span>}
+                               {i === 3 && <span className="absolute -bottom-3 left-0 text-[8px] text-neutral-600 font-bold tracking-widest">MIN</span>}
                             </div>
-                          );
-                        })}
+                          ))}
+                        </div>
+
+                        {/* Chart Bars */}
+                        <div className="absolute inset-0 flex justify-between items-end pb-8 px-2 sm:px-4">
+                          {weeklyData.days.map((day, idx) => {
+                            const percentHeight = (day.value / (weeklyData.maxValue || 1)) * 100;
+                            const heightStyle = day.value > 0 ? `${Math.max(percentHeight, 8)}%` : "4px";
+
+                            return (
+                              <div key={idx} className="flex flex-col items-center justify-end h-full w-full group/bar relative">
+                                {/* Premium Tooltip */}
+                                <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-neutral-950 border border-neutral-800 px-3 py-1.5 rounded-lg shadow-2xl opacity-0 group-hover/bar:opacity-100 transition-all duration-300 pointer-events-none z-20 whitespace-nowrap translate-y-2 group-hover/bar:translate-y-0">
+                                  <p className="text-[10px] font-black text-white uppercase tracking-wider">
+                                    {day.value > 0 ? `R$ ${day.value.toFixed(2)}` : "Sem Vendas"}
+                                  </p>
+                                  {/* Tooltip arrow */}
+                                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-neutral-950 border-b border-r border-neutral-800 rotate-45" />
+                                </div>
+
+                                <motion.div
+                                  initial={{ height: 0 }}
+                                  animate={{ height: heightStyle }}
+                                  transition={{ duration: 0.8, delay: idx * 0.05, ease: [0.16, 1, 0.3, 1] }}
+                                  className={`w-4 sm:w-6 md:w-10 rounded-t-md sm:rounded-t-lg relative cursor-pointer border-t border-l border-r transition-colors duration-300 ${
+                                    day.isToday
+                                      ? "bg-gradient-to-t from-primary/20 to-primary border-primary/60 shadow-[0_0_20px_rgba(245,245,0,0.5)]"
+                                      : day.value > 0
+                                      ? "bg-gradient-to-t from-primary/5 to-primary/70 border-primary/30 hover:to-primary"
+                                      : "bg-neutral-900 border-neutral-800"
+                                  }`}
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* X-Axis Labels */}
+                        <div className="absolute bottom-0 left-0 right-0 flex justify-between px-2 sm:px-4 h-8 items-end">
+                           {weeklyData.days.map((day, idx) => (
+                              <div key={`label-${idx}`} className="w-full flex justify-center">
+                                <span className={`text-[8px] sm:text-[10px] font-black uppercase tracking-wider ${
+                                  day.isToday ? "text-primary drop-shadow-[0_0_8px_rgba(245,245,0,0.8)]" : "text-neutral-500"
+                                }`}>
+                                  {day.label}
+                                </span>
+                              </div>
+                           ))}
+                        </div>
                       </div>
                     </div>
                   </div>
