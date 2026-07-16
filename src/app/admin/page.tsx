@@ -600,11 +600,12 @@ export default function AdminPage() {
         nomeComprador: userData.nome,
         cpfComprador: formatCPF(userData.cpf),
         lote: isParkingSlot ? "Estacionamento (Painel)" : "Atribuído Manualmente (Painel)",
-        valor: isParkingSlot ? 25.00 : 55.00,
+        valor: isParkingSlot ? (appConfig?.parkingPrice || 25.00) : (appConfig?.lotes?.[0]?.valor || 40.00),
         status: "aprovado",
         utilizado: false,
         includeParking: isParkingSlot,
-        createdAt: new Date()
+        createdAt: new Date(),
+        numeroIngresso: isParkingSlot ? undefined : parseInt(ticketId.replace("ingresso_", ""), 10)
       });
 
       // Limpar input local
@@ -678,7 +679,7 @@ export default function AdminPage() {
           nomeComprador: "",
           cpfComprador: "",
           lote: "Sem Dono (Disponível)",
-          valor: 55.00,
+          valor: appConfig?.lotes?.[0]?.valor || 40.00,
           status: "disponivel",
           createdAt: null,
           utilizado: false,
@@ -1178,24 +1179,39 @@ export default function AdminPage() {
                         ) : (
                           Object.entries(metrics.vendasPorLote).map(([loteName, count]) => {
                             const configLote = appConfig?.lotes?.find((l: any) => l.nome === loteName);
-                            // If maxVendas is null (unlimited) or not found, we use a fallback to just show the count or 100% full
-                            const target = configLote && configLote.maxVendas !== null ? configLote.maxVendas : count || 1;
+                            const isUnlimited = !configLote || configLote.maxVendas === null;
+                            const target = configLote?.maxVendas ?? appConfig?.totalTickets ?? 1050;
                             const percentage = Math.min((count / target) * 100, 100);
-                            const isUnlimited = configLote?.maxVendas === null;
 
                             return (
-                              <div key={loteName} className="space-y-2">
-                                <div className="flex justify-between text-xs font-bold uppercase">
-                                  <span className="text-neutral-300 truncate max-w-[250px]">{loteName}</span>
-                                  <span className="text-primary">{count} {isUnlimited ? "vendidos" : `/ ${target} vendidos`} ({percentage.toFixed(0)}%)</span>
+                              <div key={loteName} className="group relative space-y-2.5 p-3 -mx-3 rounded-lg hover:bg-neutral-900/40 transition-colors">
+                                <div className="flex justify-between items-end">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_8px_rgba(245,245,0,0.8)]" />
+                                    <span className="text-xs text-neutral-200 font-bold uppercase tracking-wide truncate max-w-[200px] group-hover:text-white transition-colors">
+                                      {loteName}
+                                    </span>
+                                  </div>
+                                  <div className="text-right flex flex-col items-end">
+                                    <span className="text-primary font-black text-sm">
+                                      {percentage.toFixed(0)}%
+                                    </span>
+                                    <span className="text-[9px] text-neutral-500 font-bold uppercase tracking-wider">
+                                      {count} {isUnlimited ? "vendidos" : `/ ${target}`}
+                                    </span>
+                                  </div>
                                 </div>
-                                <div className="w-full bg-neutral-900 h-3 rounded-full overflow-hidden border border-neutral-800/80">
+                                <div className="w-full bg-neutral-950 h-2.5 rounded-full overflow-hidden border border-neutral-800/80 shadow-inner relative">
+                                  {/* Track subtle glow */}
+                                  <div className="absolute inset-0 bg-neutral-900/50" />
                                   <motion.div
                                     initial={{ width: 0 }}
                                     animate={{ width: `${percentage}%` }}
-                                    transition={{ duration: 0.8, ease: "easeOut" }}
-                                    className="bg-primary h-full rounded-full"
-                                  />
+                                    transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
+                                    className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-primary/60 to-primary rounded-full shadow-[0_0_12px_rgba(245,245,0,0.4)]"
+                                  >
+                                    <div className="absolute top-0 right-0 bottom-0 w-4 bg-gradient-to-l from-white/30 to-transparent" />
+                                  </motion.div>
                                 </div>
                               </div>
                             );

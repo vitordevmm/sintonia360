@@ -23,18 +23,22 @@ export async function POST(request: Request) {
       let numeroIngresso = data.numeroIngresso || null;
 
       if (!numeroIngresso) {
-        const maxNumSnap = await adminDb.collection("ingressos")
-          .orderBy("numeroIngresso", "desc")
-          .limit(1)
+        const allNumsSnap = await adminDb.collection("ingressos")
+          .where("numeroIngresso", ">", 0)
+          .orderBy("numeroIngresso", "asc")
           .get();
         
-        if (!maxNumSnap.empty) {
-          const maxVal = maxNumSnap.docs[0].data().numeroIngresso || 0;
-          numeroIngresso = maxVal + 1;
-        } else {
-          numeroIngresso = 1;
+        let foundMissing = 1;
+        for (const doc of allNumsSnap.docs) {
+          if (doc.data().numeroIngresso === foundMissing) {
+            foundMissing++;
+          } else if (doc.data().numeroIngresso > foundMissing) {
+            break;
+          }
         }
+        numeroIngresso = foundMissing;
       }
+
 
       await docRef.update({
         status: "aprovado",
