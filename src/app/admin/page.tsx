@@ -105,6 +105,7 @@ interface Venda {
   parkingUsed?: boolean;
   parkingCheckedInAt?: any;
   numeroIngresso?: number;
+  isParkingOnly?: boolean;
 }
 
 const TABS = [
@@ -212,6 +213,9 @@ export default function AdminPage() {
   const [assignLoading, setAssignLoading] = useState<{ [key: string]: boolean }>({});
   const [checkInLoading, setCheckInLoading] = useState<{ [key: string]: boolean }>({});
   const [revokeLoading, setRevokeLoading] = useState<{ [key: string]: boolean }>({});
+  
+  // Revoke Modal State
+  const [revokeConfirmData, setRevokeConfirmData] = useState<{ ticketId: string, isParking: boolean } | null>(null);
 
   // Toast notifications state
   interface Toast {
@@ -246,7 +250,9 @@ export default function AdminPage() {
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
-        router.push("/login?redirect=/admin");
+        setTimeout(() => {
+          router.push("/login?redirect=/admin");
+        }, 50);
         return;
       }
       setUser(currentUser);
@@ -594,7 +600,7 @@ export default function AdminPage() {
 
       const isParkingSlot = ticketId.startsWith("vaga_");
 
-      await setDoc(doc(db, "ingressos", ticketId), {
+      const commonData = {
         id: ticketId,
         uid: userData.uid || userDoc.id,
         nomeComprador: userData.nome,
@@ -604,9 +610,18 @@ export default function AdminPage() {
         status: "aprovado",
         utilizado: false,
         includeParking: isParkingSlot,
+        isParkingOnly: isParkingSlot,
         createdAt: new Date(),
-        numeroIngresso: isParkingSlot ? undefined : parseInt(ticketId.replace("ingresso_", ""), 10)
-      });
+      };
+
+      if (isParkingSlot) {
+        await setDoc(doc(db, "ingressos", ticketId), commonData);
+      } else {
+        await setDoc(doc(db, "ingressos", ticketId), {
+          ...commonData,
+          numeroIngresso: parseInt(ticketId.replace("ingresso_", ""), 10)
+        });
+      }
 
       // Limpar input local
       setAssignCpfInput((prev) => ({ ...prev, [ticketId]: "" }));
@@ -631,20 +646,32 @@ export default function AdminPage() {
       return;
     }
 
-    if (!confirm(`Tem certeza que deseja retirar esta posse do comprador atual?`)) {
-      return;
-    }
+    setRevokeConfirmData({ ticketId, isParking });
+  };
+
+  const confirmRevokeTicket = async () => {
+    if (!revokeConfirmData) return;
+    const { ticketId, isParking } = revokeConfirmData;
+    setRevokeConfirmData(null);
 
     setRevokeLoading((prev) => ({ ...prev, [ticketId]: true }));
     try {
-      if (isParking && !ticketId.startsWith("vaga_")) {
-        // Se for um ingresso real que comprou estacionamento junto, a gente só remove o estacionamento.
+      // Verificar se é um ingresso que SÓ tem estacionamento (venda avulsa do novo fluxo)
+      let isParkingOnlyTicket = false;
+      const dbTicket = vendas.find(v => v.id === ticketId);
+      if (dbTicket && dbTicket.isParkingOnly) {
+        isParkingOnlyTicket = true;
+      }
+
+      if (isParking && !ticketId.startsWith("vaga_") && !isParkingOnlyTicket) {
+        // Se for um ingresso real que comprou estacionamento JUNTO com o ingresso normal, a gente só remove o estacionamento.
         await updateDoc(doc(db, "ingressos", ticketId), {
           includeParking: false,
           parkingUsed: false
         });
         showToast("Estacionamento retirado deste ingresso!", "success");
       } else {
+        // Deleta se for vaga_01 (atribuído via painel) OU se for compra apenas de estacionamento (isParkingOnly) OU se for ingresso normal sendo retirado
         await deleteDoc(doc(db, "ingressos", ticketId));
         showToast("Ingresso/Vaga liberado! Ficou 'Sem Dono' e disponível para vendas.", "success");
       }
@@ -1020,6 +1047,37 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-black text-white flex flex-col pt-20">
       <Navbar />
+
+      {/* Revoke Confirmation Modal */}
+      {revokeConfirmData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded p-6 max-w-sm w-full shadow-2xl text-center space-y-6">
+            <div className="w-16 h-16 rounded-full bg-red-950/30 flex items-center justify-center mx-auto text-red-500 border border-red-500/20">
+              <AlertTriangle size={32} />
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="text-xl font-black uppercase tracking-widest text-white">Retirar Posse</h3>
+              <p className="text-sm text-neutral-400">Tem certeza que deseja retirar esta posse do comprador atual?</p>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setRevokeConfirmData(null)}
+                className="flex-1 py-3 bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-black uppercase tracking-widest rounded transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmRevokeTicket}
+                className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white text-xs font-black uppercase tracking-widest rounded transition-colors shadow-md"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 w-full space-y-8">
         {/* Header Admin */}

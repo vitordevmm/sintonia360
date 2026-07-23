@@ -57,8 +57,19 @@ export default function Home() {
       .then(res => res.json())
       .then(data => {
         if (!data.error) {
-          setLotes(data.lotes || data); // Falback to data directly if needed
+          const fetchedLotes = data.lotes || data; // Falback to data directly if needed
           if (data.parkingPrice) setParkingPrice(data.parkingPrice);
+
+          const parkingLote = {
+            id: "estacionamento",
+            nome: "Estacionamento (1 Vaga)",
+            valor: data.parkingPrice || 25.0,
+            descricao: "Vaga de estacionamento válida para 1 carro durante o evento.",
+            status: "ativo",
+            badges: ["Estacionamento"],
+          };
+          
+          setLotes([...fetchedLotes, parkingLote as any]);
         }
       })
       .catch(console.error);
@@ -167,6 +178,8 @@ export default function Home() {
       // Obter o Token de ID da sessão atual
       const idToken = await user.getIdToken();
 
+      const isParkingOnly = selectedLote.id === "estacionamento";
+
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: {
@@ -175,7 +188,8 @@ export default function Home() {
         },
         body: JSON.stringify({
           loteId: selectedLote.id,
-          includeParking,
+          includeParking: false,
+          isParkingOnly: isParkingOnly,
           userId: user.uid,
           userNome: userData.nome,
           userCpf: userData.cpf,
@@ -416,7 +430,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch max-w-4xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch max-w-6xl mx-auto">
             {lotes.map((lote, index) => {
               const isEsgotado = lote.status === "esgotado";
               const isAguardando = lote.status === "aguardando";
@@ -520,30 +534,7 @@ export default function Home() {
               </div>
               <div className="flex justify-between items-baseline pt-2">
                 <span className="text-neutral-500">Valor Total:</span>
-                <span className="text-xl font-black text-primary">R$ {(selectedLote.valor + (includeParking ? 25 : 0)).toFixed(2)}</span>
-              </div>
-            </div>
-
-            <div
-              onClick={() => setIncludeParking(!includeParking)}
-              className={`flex items-center gap-4 p-4 mb-4 rounded border cursor-pointer transition-all ${
-                includeParking
-                  ? "border-primary bg-primary/10 shadow-[0_0_15px_rgba(245,245,0,0.15)]"
-                  : "border-neutral-800 bg-neutral-950 hover:border-neutral-700"
-              }`}
-            >
-              <div
-                className={`w-6 h-6 flex items-center justify-center rounded border transition-colors flex-shrink-0 ${
-                  includeParking
-                    ? "bg-primary border-primary text-black"
-                    : "bg-neutral-900 border-neutral-700 text-transparent"
-                }`}
-              >
-                <Check size={16} strokeWidth={4} />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-sm font-black text-white tracking-wider uppercase">Incluir Estacionamento</span>
-                <span className="text-xs text-primary font-bold">+ R$ {parkingPrice.toFixed(2).replace(".", ",")} (1 Vaga)</span>
+                <span className="text-xl font-black text-primary">R$ {(selectedLote.valor).toFixed(2)}</span>
               </div>
             </div>
 

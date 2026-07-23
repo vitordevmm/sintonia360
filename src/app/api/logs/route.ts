@@ -19,3 +19,17 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    await adminDb.collection("client_logs").add({
+      ...body,
+      receivedAt: new Date(),
+      userAgent: request.headers.get("user-agent") || "unknown"
+    });
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

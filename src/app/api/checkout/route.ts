@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { loteId, userId, userNome, userCpf, userEmail, userTelefone, includeParking } = body;
+    const { loteId, userId, userNome, userCpf, userEmail, userTelefone, includeParking, isParkingOnly } = body;
 
     if (!loteId || !userId || !userNome || !userCpf || !userEmail) {
       return NextResponse.json(
@@ -43,40 +43,13 @@ export async function POST(request: Request) {
     const parkingTotalSpots = appConfig?.parkingSpots || 50;
     const parkingPrice = appConfig?.parkingPrice || 25.00;
 
-    const loteData = lotesConfig.find((l: any) => l.id === loteId);
-    if (!loteData) {
-      return NextResponse.json({ error: "Lote inválido ou esgotado." }, { status: 400 });
-    }
-
-    // Verifica se o usuário já possui um ingresso aprovado
-    const userTicketsSnapshot = await adminDb.collection("ingressos")
-      .where("uid", "==", userId)
-      .where("status", "==", "aprovado")
-      .get();
+    let loteNome = "";
+    let valor = 0;
     
-    if (!userTicketsSnapshot.empty) {
-      return NextResponse.json({ error: "Você já possui um ingresso garantido. Só é permitido um ingresso por pessoa." }, { status: 400 });
-    }
+    if (loteId === "estacionamento") {
+      loteNome = "Estacionamento (1 Vaga)";
+      valor = parkingPrice;
 
-    const loteNome = loteData.nome;
-    const valor = loteData.valor;
-
-    // Verificação de Limite Automática para Lote
-    if (loteData.maxVendas !== null && typeof loteData.maxVendas !== "undefined") {
-      const vendidosSnapshot = await adminDb.collection("ingressos")
-        .where("loteId", "==", loteId)
-        .where("status", "==", "aprovado")
-        .count()
-        .get();
-      
-      const vendidos = vendidosSnapshot.data().count;
-      if (vendidos >= loteData.maxVendas) {
-        return NextResponse.json({ error: "Lote Esgotado! Por favor, atualize a página para ver o próximo lote." }, { status: 400 });
-      }
-    }
-
-    // Verificação de Limite de Estacionamento Dinâmico
-    if (includeParking) {
       const estacionamentoVendido = await adminDb.collection("ingressos")
         .where("includeParking", "==", true)
         .where("status", "==", "aprovado")
@@ -85,8 +58,54 @@ export async function POST(request: Request) {
       
       const vagasVendidas = estacionamentoVendido.data().count;
       if (vagasVendidas >= parkingTotalSpots) {
-        return NextResponse.json({ error: "As vagas de estacionamento estão esgotadas! Por favor, desmarque a opção para continuar com a compra do ingresso." }, { status: 400 });
+        return NextResponse.json({ error: "As vagas de estacionamento estão esgotadas!" }, { status: 400 });
       }
+    } else {
+      const loteData = lotesConfig.find((l: any) => l.id === loteId);
+      if (!loteData) {
+        return NextResponse.json({ error: "Lote inválido ou esgotado." }, { status: 400 });
+      }
+      loteNome = loteData.nome;
+      valor = loteData.valor;
+
+      if (loteData.maxVendas !== null && typeof loteData.maxVendas !== "undefined") {
+        const vendidosSnapshot = await adminDb.collection("ingressos")
+          .where("loteId", "==", loteId)
+          .where("status", "==", "aprovado")
+          .count()
+          .get();
+        
+        const vendidos = vendidosSnapshot.data().count;
+        if (vendidos >= loteData.maxVendas) {
+          return NextResponse.json({ error: "Lote Esgotado! Por favor, atualize a página para ver o próximo lote." }, { status: 400 });
+        }
+      }
+    }
+
+    // Verifica se o usuário já possui um ingresso aprovado
+    const userTicketsSnapshot = await adminDb.collection("ingressos")
+      .where("uid", "==", userId)
+      .where("status", "==", "aprovado")
+      .get();
+    
+    let userHasIngresso = false;
+    let userHasEstacionamento = false;
+
+    userTicketsSnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      if (data.includeParking) {
+        userHasEstacionamento = true;
+      }
+      if (!data.isParkingOnly) {
+        userHasIngresso = true;
+      }
+    });
+
+    if (loteId === "estacionamento" && userHasEstacionamento) {
+      return NextResponse.json({ error: "Você já possui uma vaga de estacionamento." }, { status: 400 });
+    }
+    if (loteId !== "estacionamento" && userHasIngresso) {
+      return NextResponse.json({ error: "Você já possui um ingresso garantido. Só é permitido um ingresso por pessoa." }, { status: 400 });
     }
 
     // Gera um identificador de compra único
@@ -151,9 +170,10 @@ export async function POST(request: Request) {
       lote: loteNome,
       loteId: loteId,
       valor: includeParking ? Number(valor) + Number(parkingPrice) : Number(valor),
-      includeParking: Boolean(includeParking),
+      includeParking: Boolean(includeParking) || loteId === "estacionamento",
+      isParkingOnly: loteId === "estacionamento",
       parkingUsed: false,
-      parkingQrCodeData: includeParking ? `sintonia360_parking_${purchaseId}_${userId}` : null,
+      parkingQrCodeData: (includeParking || loteId === "estacionamento") ? `sintonia360_parking_${purchaseId}_${userId}` : null,
       status: "pendente", // Inicia como pendente aguardando webhook
       paymentId: "", // Será preenchido no webhook se fornecido
       qrCodeData: `sintonia360_${purchaseId}_${userId}`, // Código que será lido no leitor da portaria
